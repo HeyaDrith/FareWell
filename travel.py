@@ -17,7 +17,8 @@ DEMO_DIR = Path(__file__).parent / "demo_data"
 
 
 def _load_demo(name: str):
-    return json.loads((DEMO_DIR / name).read_text())
+    # UTF-8 explicitly: Windows defaults to cp1252, which can't read accented place names.
+    return json.loads((DEMO_DIR / name).read_text(encoding="utf-8"))
 
 
 @lru_cache(maxsize=1)
