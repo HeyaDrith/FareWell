@@ -20,6 +20,7 @@ import os
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
 from threading import RLock
 from uuid import uuid4
 
@@ -223,6 +224,7 @@ def record_pick(trip: dict, category: str, description: str, amount: float,
     (the budget is never understated). Returns
     {"id", "category", "description", "amount", "saved", "date"}.
     """
+    _require_unlocked(trip)
     cost = _whole_dollars(amount, "Choose a cost above $0.")
     saved_dollars = _saved_dollars(saved)
     category = category if category in CATEGORIES else "Other"
@@ -269,6 +271,7 @@ def remove_pick(trip: dict, pick_id: str) -> None:
 
     Live Nessie can't delete purchases, so the trip dict remembers removed picks.
     """
+    _require_unlocked(trip)
     if trip["demo"]:
         with _DEMO_LOCK:
             t = _demo_trip(trip)
@@ -312,6 +315,32 @@ def get_summary(trip: dict) -> dict:
     remaining = round(trip["budget"] - spent, 2)
     return {"budget": trip["budget"], "spent": spent, "saved": saved, "remaining": remaining,
             "final_total": spent, "over_budget": remaining < 0, "picks": picks}
+
+
+def lock_trip(trip: dict) -> dict:
+    """Lock in the plan: no more picks or removals until unlock_trip().
+
+    This is a demo confirmation, not a booking: nothing is reserved or charged beyond the
+    sandbox purchases already recorded. Returns {"confirmation", "locked_on", **summary}.
+    """
+    summary = get_summary(trip)
+    if not summary["picks"]:
+        raise ValueError("Pick at least one option before locking in your trip.")
+    if summary["over_budget"]:
+        raise ValueError("You're over budget. Remove something before locking in your trip.")
+    code = "TS-" + sha256(str(trip["budget_id"]).encode()).hexdigest()[:6].upper()
+    trip["locked"] = {"confirmation": code, "locked_on": date.today().isoformat()}
+    return {**trip["locked"], **summary}
+
+
+def unlock_trip(trip: dict) -> None:
+    """Allow changes again (the confirmation number stays the same if re-locked)."""
+    trip.pop("locked", None)
+
+
+def _require_unlocked(trip: dict) -> None:
+    if trip.get("locked"):
+        raise ValueError("This trip is locked in. Unlock it to make changes.")
 
 
 def _whole_dollars(amount, message: str) -> int:

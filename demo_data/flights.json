@@ -1,5 +1,5 @@
 [
-  {"airline": "Southwest", "price": 412.0, "duration_min": 195},
-  {"airline": "Volaris", "price": 438.0, "duration_min": 180},
-  {"airline": "American", "price": 521.0, "duration_min": 210}
+  {"airline": "Southwest", "price": 412.0, "duration_min": 195, "stops": 0},
+  {"airline": "Volaris", "price": 438.0, "duration_min": 180, "stops": 0},
+  {"airline": "American", "price": 521.0, "duration_min": 285, "stops": 1}
 ]

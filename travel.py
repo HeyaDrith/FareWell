@@ -3,17 +3,85 @@
 Both functions return simple, normalized dicts so the UI never touches raw SerpApi JSON.
 In demo mode (or if no key is set) they return cached data from demo_data/.
 """
+import base64
 import json
 import os
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 DEMO_DIR = Path(__file__).parent / "demo_data"
 
 
 def _load_demo(name: str):
     return json.loads((DEMO_DIR / name).read_text())
+
+
+def flight_booking_url(airline: str, origin: str, dest: str, depart: str, ret: str,
+                       flight_numbers: list[str] | None = None) -> str:
+    """Google Flights results for this round trip, filtered to the picked flight's airline.
+
+    SerpApi gives no plain booking URL for a flight (its booking step is a form post to Google),
+    and Google Flights ignores free-text ?q= links. Its results pages take a "tfs" parameter:
+    URL-safe base64 of a small protobuf (field numbers from the open-source fast-flights project).
+    The app shows the flight number and time so the user can tap the matching listing.
+    """
+    code = (flight_numbers or [""])[0].split(" ")[0].upper()
+    airlines = [code] if len(code) == 2 and code.isalnum() else []
+    tfs = _flights_tfs([(depart, origin, dest), (ret, dest, origin)], airlines)
+    return "https://www.google.com/travel/flights/search?" + urlencode({"tfs": tfs, "hl": "en", "curr": "USD"})
+
+
+def _flights_tfs(legs: list[tuple[str, str, str]], airlines: list[str]) -> str:
+    """Encode legs [(YYYY-MM-DD, from, to), ...] as Google Flights' tfs value (round trip,
+    1 adult, economy)."""
+    def varint(n: int) -> bytes:
+        out = bytearray()
+        while True:
+            byte, n = n & 0x7F, n >> 7
+            out.append(byte | (0x80 if n else 0))
+            if not n:
+                return bytes(out)
+
+    def num(field: int, value: int) -> bytes:
+        return varint(field << 3) + varint(value)
+
+    def blob(field: int, data: bytes | str) -> bytes:
+        data = data.encode() if isinstance(data, str) else data
+        return varint(field << 3 | 2) + varint(len(data)) + data
+
+    def airport(code: str) -> bytes:
+        return num(1, 1) + blob(2, code.upper())
+
+    body = num(1, 28) + num(2, 2)
+    for day, frm, to in legs:
+        leg = blob(2, day) + b"".join(blob(6, a) for a in airlines) + blob(13, airport(frm)) + blob(14, airport(to))
+        body += blob(3, leg)
+    body += num(8, 1) + num(9, 1) + num(19, 1)  # 1 adult, economy, round trip
+    return base64.urlsafe_b64encode(body).decode().rstrip("=")
+
+
+def hotel_booking_url(name: str, city: str, check_in: str, check_out: str,
+                      property_token: str = "") -> str:
+    """This hotel's own Google Hotels page (all booking sites + prices) when its ID is known;
+    otherwise a Google Hotels search for the hotel name, city and dates."""
+    if property_token:
+        return "https://www.google.com/travel/hotels/entity/" + quote(property_token, safe="")
+    query = f"{name} {city}".strip()
+    return "https://www.google.com/travel/hotels?" + urlencode(
+        {"q": query, "checkin": check_in, "checkout": check_out})
+
+
+def _web_link(value) -> str:
+    """Keep only http(s) links from the provider."""
+    link = str(value or "").strip()
+    return link if link.startswith(("https://", "http://")) else ""
+
+
+def place_url(query: str) -> str:
+    """Google Maps search for a restaurant or activity."""
+    return "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query.strip()})
 
 
 def _client(params: dict) -> dict:
@@ -50,7 +118,9 @@ def _price(value) -> float | None:
 def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = False) -> list[dict]:
     """origin/dest are airport codes (e.g. AUS, CUN); dates are YYYY-MM-DD.
 
-    Returns [{"airline": str, "price": float, "duration_min": int}], cheapest first.
+    Returns [{"airline", "price", "duration_min", "stops", "flight_numbers", "departs"}],
+    cheapest first. flight_numbers (e.g. ["WN 1234"]) and departs (e.g. "2027-01-22 07:05")
+    identify the exact listing; they're empty for sample data that doesn't have them.
     """
     _stay_nights(depart, ret)
     if demo or not os.getenv("SERPAPI_KEY"):
@@ -74,6 +144,9 @@ def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = F
             "airline": legs[0].get("airline", "Unknown"),
             "price": price,
             "duration_min": int(f.get("total_duration", 0)),
+            "stops": max(0, len(legs) - 1),  # outbound legs; 0 = nonstop
+            "flight_numbers": [leg["flight_number"] for leg in legs if leg.get("flight_number")],
+            "departs": str((legs[0].get("departure_airport") or {}).get("time") or ""),
         })
     return sorted(flights, key=lambda x: x["price"])
 
@@ -81,7 +154,9 @@ def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = F
 def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False) -> list[dict]:
     """query is free text, e.g. "hotels in Cancun".
 
-    Returns [{"name": str, "per_night": float, "total": float, "rating": float}], cheapest first.
+    Returns [{"name", "per_night", "total", "rating", "property_token", "website"}], cheapest first.
+    property_token is Google's ID for that exact hotel (its Google Hotels page lists every
+    booking site); website is the hotel's own site. Both are "" when not provided.
     Live hotels without a complete stay total are omitted. Demo nightly rates are
     multiplied by the requested stay length; these are illustrative prices only.
     """
@@ -109,5 +184,7 @@ def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False)
             "per_night": per_night,
             "total": total,
             "rating": float(p.get("overall_rating", 0) or 0),
+            "property_token": str(p.get("property_token") or ""),
+            "website": _web_link(p.get("link")),
         })
     return sorted(hotels, key=lambda x: x["total"])

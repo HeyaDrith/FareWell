@@ -162,6 +162,85 @@ class AppTripTests(DemoAppCase):
             self.assertEqual(len(calls), live_calls)  # demo trip never reaches Nessie
             self.assertIn("simulated demo money", self.visible_text())
 
+    def test_recommendations_badges_and_budget_split(self):
+        text = self.plain_text()
+        self.assertIn("Suggested split of what's left: ✈️ Flights $525 · 🏨 Hotel $600 · "
+                      "🍽️ Food $225 · 🎟️ Activities $150 (food ≈ $28/day)", text)
+        self.assertIn("Recommended: Volaris** ($438), best quality that fits your $525 flight budget.", text)
+        self.assertIn("**Southwest** · 3h 15m · Nonstop  \n💰 Cheapest", text)
+        self.assertIn("**American** · 4h 45m · 1 stop", text)
+        # No hotel fits the $600 hotel share yet: recommend the cheapest, offer the upgrade.
+        self.assertIn("nothing fits your $600 hotel budget, so this is the cheapest. "
+                      "✨ Upgrade: **Azure Resort & Spa** for $882 more.", text)
+        self.add("flight-1")  # Volaris $438 -> $1,062 left; hotel share rolls up to $654
+        self.assertIn("Recommended: Seaside Budget Inn** ($623), best quality that fits your "
+                      "$654 hotel budget.", self.plain_text())
+        self.assertNotIn("✈️ Flights", self.plain_text())
+
+    def test_booking_buttons_on_picks(self):
+        self.add("flight-0")
+        self.add("hotel-0")
+        self.add_extra("Taqueria El Fogon", 30)
+        buttons = self.link_buttons()
+        self.assertEqual([label for label, _ in buttons],
+                         ["Book on Google Flights ↗", "Find this hotel ↗", "Open in Google Maps ↗"])
+        self.assertTrue(buttons[0][1].startswith("https://www.google.com/travel/flights/search?tfs="))
+        self.assertTrue(buttons[1][1].startswith("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Cancun"))
+        self.assertEqual(buttons[2][1], "https://www.google.com/maps/search/?api=1&query=Taqueria+El+Fogon+Cancun")
+
+    def test_live_listings_link_to_the_exact_hotel_and_flight(self):
+        flights = [{"airline": "Southwest", "price": 400.0, "duration_min": 195, "stops": 0,
+                    "flight_numbers": ["WN 1234"], "departs": "2027-01-22 07:05"}]
+        hotels = [{"name": "Real Hotel", "per_night": 90.0, "total": 630.0, "rating": 4.4,
+                   "property_token": "ChgI56qez/Nac0", "website": "https://realhotel.example/"}]
+        with patch("travel.search_flights", return_value=flights), patch("travel.search_hotels", return_value=hotels):
+            self.app.number_input[0].set_value(1600).run()
+            self.click("Start planning")
+        self.assertIn("**Southwest** · WN 1234, departs 7:05 AM · 3h 15m · Nonstop", self.plain_text())
+        self.add("flight-0")
+        self.add("hotel-0")
+        self.assertIn("Southwest flight AUS→CUN (WN 1234, departs 7:05 AM)", self.plain_text())
+        self.assertEqual(self.link_buttons()[1:], [
+            ("Book this hotel ↗", "https://www.google.com/travel/hotels/entity/ChgI56qez%2FNac0"),
+            ("Hotel website ↗", "https://realhotel.example/")])
+        from test_travel import decode_tfs
+        self.assertEqual(decode_tfs(self.link_buttons()[0][1])["legs"][0][3], ["WN"])  # airline filter
+
+    def test_picked_category_recommends_a_swap_within_budget(self):
+        self.add("flight-0")  # Southwest $412
+        self.add("hotel-0")   # $623 -> $465 left
+        # Swapping the flight frees $412: (465 + 412) x 0.35 / (0.35 + 0.15 + 0.10) = $512
+        self.assertIn("Recommended: Volaris** ($438), best quality that fits your $512 flight budget.",
+                      self.plain_text())
+
+    def test_lock_in_shows_confirmation_and_freezes_picks(self):
+        lock = next(b for b in self.app.button if b.label == "🔒 Lock in my trip")
+        self.assertTrue(lock.disabled)  # nothing picked yet
+        self.add("flight-0")
+        self.add("hotel-0")
+        self.click("🔒 Lock in my trip")
+        text = self.plain_text()
+        self.assertRegex(text, r"Trip locked in!\*\* Confirmation \*\*TS-[0-9A-F]{6}\*\*")
+        self.assertIn("total $1,035 · saved $327", text)
+        self.assertIn("nothing is reserved or charged", text)
+        self.assertTrue(all(b.disabled for b in self.add_buttons()))
+        self.assertFalse(any(b.label == "✕" for b in self.app.button))
+        self.assertIn("**Flight: Southwest flight AUS→CUN** · $412", self.plain_text())
+        self.assertEqual([label for label, _ in self.link_buttons()],
+                         ["Book on Google Flights ↗", "Find this hotel ↗"])  # shown once, in the confirmation
+        self.assertIn("sample listings", self.plain_text())
+        self.click("Unlock to make changes")
+        self.assertFalse(any(b.disabled for b in self.add_buttons()))
+        self.add("flight-0")
+        self.assertEqual(self.metrics()["Spent"], "$1,447")
+
+    def test_cannot_lock_while_over_budget(self):
+        self.add("flight-2")
+        self.add("hotel-2")
+        lock = next(b for b in self.app.button if b.label == "🔒 Lock in my trip")
+        self.assertTrue(lock.disabled)
+        self.assertIn("Get under budget first", self.visible_text())
+
 
 if __name__ == "__main__":
     unittest.main()

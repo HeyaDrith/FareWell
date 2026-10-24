@@ -91,3 +91,31 @@ class WeeklyAmountTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecommendationTests(unittest.TestCase):
+    def test_budget_split_and_rollover(self):
+        self.assertEqual([planner.category_allowance(c, 1500) for c in ("Flight", "Hotel", "Food", "Activity")],
+                         [525.0, 600.0, 225.0, 150.0])
+        # $438 flight picked: the $1,062 left is split among hotel, food and activities.
+        self.assertEqual(planner.category_allowance("Hotel", 1062, {"Flight"}), 653.54)
+        self.assertEqual(planner.category_allowance("Hotel", 0), 0.0)
+        self.assertEqual(planner.category_allowance("Other", 1000), 0.0)
+
+    def test_quality_scores(self):
+        self.assertEqual(planner.flight_quality({"duration_min": 180, "stops": 0}, 180), 5.0)
+        self.assertEqual(planner.flight_quality({"duration_min": 285, "stops": 1}, 180), 2.41)
+        self.assertEqual(planner.hotel_quality({"rating": 4.3}), 4.3)
+        self.assertEqual(planner.hotel_quality({"rating": None}), 0.0)
+
+    def test_pick_options(self):
+        prices, quality = [623, 924, 1505], [3.9, 4.3, 4.7]
+        self.assertEqual(planner.pick_options(prices, quality, 1000),
+                         {"recommended": 1, "cheapest": 0, "best_quality": 2})
+        # Nothing fits: recommend the cheapest.
+        self.assertEqual(planner.pick_options(prices, quality, 600)["recommended"], 0)
+        # Ties go to the cheaper option.
+        self.assertEqual(planner.pick_options([300, 200], [4.0, 4.0], 500),
+                         {"recommended": 1, "cheapest": 1, "best_quality": 1})
+        self.assertEqual(planner.pick_options([], [], 500),
+                         {"recommended": None, "cheapest": None, "best_quality": None})

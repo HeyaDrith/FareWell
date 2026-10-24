@@ -230,3 +230,32 @@ class TripBudgetTests(unittest.TestCase):
             with self.assertRaises(bank.BankError) as result:
                 bank.create_trip(100)
         self.assertNotIn("secret-sentinel", str(result.exception))
+
+
+class TripLockTests(unittest.TestCase):
+    def setUp(self):
+        context = patch.dict(bank._TRIPS, {}, clear=True)
+        context.start()
+        self.addCleanup(context.stop)
+        self.trip = bank.create_trip(1000, True)
+
+    def test_lock_returns_confirmation_and_blocks_changes_until_unlocked(self):
+        pick = bank.record_pick(self.trip, "Flight", "Southwest", 412, saved=26)
+        locked = bank.lock_trip(self.trip)
+        self.assertRegex(locked["confirmation"], r"^TS-[0-9A-F]{6}$")
+        self.assertEqual((locked["final_total"], locked["saved"]), (412, 26))
+        for change in (lambda: bank.record_pick(self.trip, "Food", "Tacos", 10),
+                       lambda: bank.remove_pick(self.trip, pick["id"])):
+            with self.assertRaisesRegex(ValueError, "locked"):
+                change()
+        bank.unlock_trip(self.trip)
+        bank.record_pick(self.trip, "Food", "Tacos", 10)
+        self.assertEqual(bank.lock_trip(self.trip)["confirmation"], locked["confirmation"])
+
+    def test_cannot_lock_empty_or_over_budget_trip(self):
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            bank.lock_trip(self.trip)
+        bank.record_pick(self.trip, "Hotel", "Pricey", 1200)
+        with self.assertRaisesRegex(ValueError, "over budget"):
+            bank.lock_trip(self.trip)
+        self.assertNotIn("locked", self.trip)
