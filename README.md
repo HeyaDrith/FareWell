@@ -12,6 +12,12 @@ streamlit run app.py
 ```
 With no keys set, the app runs in **demo mode** using cached data in `demo_data/`.
 
+## Check the savings calculations
+```bash
+python -m unittest discover -s tests -v
+```
+These checks use only Python's standard library; no API keys or network access are needed.
+
 ## Who owns what
 | File | Job |
 |---|---|
