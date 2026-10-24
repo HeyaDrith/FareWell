@@ -1,5 +1,5 @@
 [
-  {"airline": "Southwest", "price": 412.0, "duration_min": 195, "stops": 0},
-  {"airline": "Volaris", "price": 438.0, "duration_min": 180, "stops": 0},
-  {"airline": "American", "price": 521.0, "duration_min": 285, "stops": 1}
+  {"airline": "Southwest", "price": 412.0, "duration_min": 195, "stops": 0, "route": ["AUS", "CUN"]},
+  {"airline": "Volaris", "price": 438.0, "duration_min": 180, "stops": 0, "route": ["AUS", "CUN"]},
+  {"airline": "American", "price": 521.0, "duration_min": 285, "stops": 1, "route": ["AUS", "DFW", "CUN"]}
 ]

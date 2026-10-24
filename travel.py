@@ -5,9 +5,11 @@ In demo mode (or if no key is set) they return cached data from demo_data/.
 """
 import base64
 import json
+import math
 import os
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -16,6 +18,33 @@ DEMO_DIR = Path(__file__).parent / "demo_data"
 
 def _load_demo(name: str):
     return json.loads((DEMO_DIR / name).read_text())
+
+
+@lru_cache(maxsize=1)
+def _airports() -> dict:
+    # IATA code -> [lat, lon, city]; large/medium airports from OurAirports (public domain).
+    return _load_demo("airports.json")
+
+
+def airport_location(code: str) -> dict | None:
+    """{"code", "lat", "lon", "city"} for an IATA airport code, or None if unknown."""
+    code = str(code or "").strip().upper()
+    found = _airports().get(code)
+    if not found:
+        return None
+    lat, lon, city = found
+    return {"code": code, "lat": lat, "lon": lon, "city": city}
+
+
+def _coordinates(gps) -> tuple[float | None, float | None]:
+    """(lat, lon) from SerpApi's gps_coordinates, or (None, None) if missing or invalid."""
+    try:
+        lat, lon = float(gps["latitude"]), float(gps["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None, None
+    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+        return None, None
+    return lat, lon
 
 
 def flight_booking_url(airline: str, origin: str, dest: str, depart: str, ret: str,
@@ -118,9 +147,10 @@ def _price(value) -> float | None:
 def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = False) -> list[dict]:
     """origin/dest are airport codes (e.g. AUS, CUN); dates are YYYY-MM-DD.
 
-    Returns [{"airline", "price", "duration_min", "stops", "flight_numbers", "departs"}],
+    Returns [{"airline", "price", "duration_min", "stops", "flight_numbers", "departs", "route"}],
     cheapest first. flight_numbers (e.g. ["WN 1234"]) and departs (e.g. "2027-01-22 07:05")
-    identify the exact listing; they're empty for sample data that doesn't have them.
+    identify the exact listing; route is the outbound airports in order, layovers included
+    (e.g. ["AUS", "MEX", "CUN"]). All three are empty for sample data that doesn't have them.
     """
     _stay_nights(depart, ret)
     if demo or not os.getenv("SERPAPI_KEY"):
@@ -147,16 +177,26 @@ def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = F
             "stops": max(0, len(legs) - 1),  # outbound legs; 0 = nonstop
             "flight_numbers": [leg["flight_number"] for leg in legs if leg.get("flight_number")],
             "departs": str((legs[0].get("departure_airport") or {}).get("time") or ""),
+            "route": _route(legs),
         })
     return sorted(flights, key=lambda x: x["price"])
+
+
+def _route(legs: list[dict]) -> list[str]:
+    """Outbound airport codes in order: first departure, then every arrival."""
+    stops = [(legs[0].get("departure_airport") or {}).get("id")]
+    stops += [(leg.get("arrival_airport") or {}).get("id") for leg in legs]
+    codes = [str(code).upper() for code in stops if code]
+    return codes if len(codes) == len(stops) else []  # a gap would draw a wrong path
 
 
 def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False) -> list[dict]:
     """query is free text, e.g. "hotels in Cancun".
 
-    Returns [{"name", "per_night", "total", "rating", "property_token", "website"}], cheapest first.
-    property_token is Google's ID for that exact hotel (its Google Hotels page lists every
-    booking site); website is the hotel's own site. Both are "" when not provided.
+    Returns [{"name", "per_night", "total", "rating", "property_token", "website", "lat", "lon"}],
+    cheapest first. property_token is Google's ID for that exact hotel (its Google Hotels page
+    lists every booking site); website is the hotel's own site. Both are "" when not provided.
+    lat/lon place the hotel on the map; None when not provided.
     Live hotels without a complete stay total are omitted. Demo nightly rates are
     multiplied by the requested stay length; these are illustrative prices only.
     """
@@ -179,6 +219,7 @@ def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False)
         total = _price((p.get("total_rate") or {}).get("extracted_lowest"))
         if per_night is None or total is None:
             continue
+        lat, lon = _coordinates(p.get("gps_coordinates"))
         hotels.append({
             "name": p.get("name", "Unknown"),
             "per_night": per_night,
@@ -186,5 +227,7 @@ def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False)
             "rating": float(p.get("overall_rating", 0) or 0),
             "property_token": str(p.get("property_token") or ""),
             "website": _web_link(p.get("link")),
+            "lat": lat,
+            "lon": lon,
         })
     return sorted(hotels, key=lambda x: x["total"])

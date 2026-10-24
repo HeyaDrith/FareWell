@@ -12,6 +12,7 @@ import bank
 import draft_ui
 import planner
 import travel
+import trip_map
 
 load_dotenv()
 # On Streamlit Community Cloud, keys live in st.secrets instead of .env.
@@ -221,6 +222,24 @@ def book_buttons(pick: dict):
         st.link_button(label, url)
 
 
+def view_links(buttons) -> str:
+    """Small markdown links so an option can be checked before adding it (opens a new tab)."""
+    def safe(url: str) -> str:  # keep provider URLs from breaking the markdown link syntax
+        return url.replace(" ", "%20").replace("(", "%28").replace(")", "%29")
+    return " · ".join(f"[{label}]({safe(url)})" for label, url in buttons if url)
+
+
+def flight_buttons(f: dict) -> list[tuple[str, str]]:
+    return [("Book on Google Flights ↗", travel.flight_booking_url(
+        f["airline"], origin, dest, str(depart), str(ret), f.get("flight_numbers")))]
+
+
+def hotel_buttons(h: dict) -> list[tuple[str, str]]:
+    return [("Book this hotel ↗" if h.get("property_token") else "Find this hotel ↗",
+             travel.hotel_booking_url(h["name"], place, str(depart), str(ret), h.get("property_token", ""))),
+            ("Hotel website ↗", h.get("website", ""))]
+
+
 # ---- 3. Options ----
 st.header("3. Pick your options")
 if locked:
@@ -228,11 +247,34 @@ if locked:
 if not (flights and hotels):
     st.warning("No matching flights or hotels with complete prices. Try different dates or a different destination.")
 
+flights_shown, hotels_shown = flights[:6], hotels[:6]
+shortest = min((f["duration_min"] for f in flights_shown if f["duration_min"]), default=0)
+flight_chosen = planner.pick_options([f["price"] for f in flights_shown],
+                                     [planner.flight_quality(f, shortest) for f in flights_shown], allowance["Flight"])
+hotel_chosen = planner.pick_options([h["total"] for h in hotels_shown],
+                                    [planner.hotel_quality(h) for h in hotels_shown], allowance["Hotel"])
+
+# ---- Map: the flight path (picked, else recommended) and the hotels near the destination ----
+if flights_shown or hotels_shown:
+    picked_names = {p["description"] for p in summary["picks"] if p["category"] == "Hotel"}
+    recommended_hotel = (hotels_shown[hotel_chosen["recommended"]]["name"]
+                         if hotel_chosen["recommended"] is not None else None)
+    stops, flight_label = trip_map.flight_path([], origin, dest), f"{origin} → {dest}"
+    if flights_shown:
+        default = ss.get("map_flight", flight_chosen["recommended"] or 0)
+        i = st.selectbox("Show the flight path for", range(len(flights_shown)), index=min(default, len(flights_shown) - 1),
+                         format_func=lambda i: f"{flights_shown[i]['airline']} · ${flights_shown[i]['price']:,.0f}"
+                                               + (" · ⭐ Recommended" if i == flight_chosen["recommended"] else ""))
+        stops = trip_map.flight_path(flights_shown[i].get("route") or [], origin, dest)
+        flight_label = esc(flights_shown[i]["airline"])
+    trip_map.render(flight_label, stops,
+                    trip_map.hotel_points(hotels_shown, travel.airport_location(dest), picked_names, recommended_hotel),
+                    esc(place))
+
 if flights:
-    shown = flights[:6]
+    shown = flights_shown
     prices = [f["price"] for f in shown]
-    shortest = min((f["duration_min"] for f in shown if f["duration_min"]), default=0)
-    chosen = planner.pick_options(prices, [planner.flight_quality(f, shortest) for f in shown], allowance["Flight"])
+    chosen = flight_chosen
     typical = planner.typical_price([f["price"] for f in flights])
     st.subheader("Flights")
     st.caption(f"Typical round-trip price: {money(typical)}. Quality = shorter trip, fewer stops.")
@@ -245,17 +287,17 @@ if flights:
                    + f"{f['duration_min'] // 60}h {f['duration_min'] % 60}m · "
                    f"{'Nonstop' if not stops else f'{stops} stop' + ('s' if stops > 1 else '')}"
                    + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else ""))
-        b.markdown(f"{money(f['price'])} · {fit_label(f['price'])}{save_label(saved)}")
+        b.markdown(f"{money(f['price'])} · {fit_label(f['price'])}{save_label(saved)}  \n"
+                   + view_links([("View on Google Flights ↗", flight_buttons(f)[0][1])]))
         if c.button("Add", key=f"flight-{i}", disabled=bool(locked)):
+            ss.map_flight = i  # the map follows the flight you add
             add("Flight", f"{f['airline']} flight {origin}→{dest}"
-                + (f" ({flight_id(f)})" if flight_id(f) else ""), f["price"], saved,
-                [("Book on Google Flights ↗", travel.flight_booking_url(
-                    f["airline"], origin, dest, str(depart), str(ret), f.get("flight_numbers")))])
+                + (f" ({flight_id(f)})" if flight_id(f) else ""), f["price"], saved, flight_buttons(f))
 
 if hotels:
-    shown = hotels[:6]
+    shown = hotels_shown
     prices = [h["total"] for h in shown]
-    chosen = planner.pick_options(prices, [planner.hotel_quality(h) for h in shown], allowance["Hotel"])
+    chosen = hotel_chosen
     typical = planner.typical_price([h["total"] for h in hotels])
     st.subheader("Hotels")
     st.caption(f"Typical stay: {money(typical)} total. Quality = guest rating.")
@@ -265,12 +307,12 @@ if hotels:
         a, b, c = st.columns([4, 3, 1])
         a.markdown(f"**{esc(h['name'])}** · {h['rating']}★ · {money(h['per_night'])}/night"
                    + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else ""))
-        b.markdown(f"{money(h['total'])} total · {fit_label(h['total'])}{save_label(saved)}")
+        views = [("View hotel ↗" if h.get("property_token") else "Find hotel ↗", hotel_buttons(h)[0][1]),
+                 ("Website ↗", h.get("website", ""))]
+        b.markdown(f"{money(h['total'])} total · {fit_label(h['total'])}{save_label(saved)}  \n"
+                   + view_links(views))
         if c.button("Add", key=f"hotel-{i}", disabled=bool(locked)):
-            add("Hotel", h["name"], h["total"], saved,
-                [("Book this hotel ↗" if h.get("property_token") else "Find this hotel ↗",
-                  travel.hotel_booking_url(h["name"], place, str(depart), str(ret), h.get("property_token", ""))),
-                 ("Hotel website ↗", h.get("website", ""))])
+            add("Hotel", h["name"], h["total"], saved, hotel_buttons(h))
 
 st.subheader("Food & activities")
 if "Food" not in picked:

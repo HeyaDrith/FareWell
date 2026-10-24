@@ -22,7 +22,7 @@ class TravelTests(unittest.TestCase):
             rows = travel.search_flights("AUS", "CUN", "2027-01-01", "2027-01-08")
         self.assertEqual([row["price"] for row in rows], [310.25, 450.0])
         self.assertEqual(set(rows[0]), {"airline", "price", "duration_min", "stops",
-                                        "flight_numbers", "departs"})
+                                        "flight_numbers", "departs", "route"})
         self.assertEqual(client.call_args.args[0]["currency"], "USD")
 
     def test_hotels_use_total_stay_price_and_omit_incomplete_quotes(self):
@@ -37,7 +37,7 @@ class TravelTests(unittest.TestCase):
         with patch("travel._client", return_value=data):
             rows = travel.search_hotels("Cancun", "2027-01-01", "2027-01-08")
         self.assertEqual(rows, [{"name": "Complete", "per_night": 100.0, "total": 750.0, "rating": 4.5,
-                                 "property_token": "", "website": ""}])
+                                 "property_token": "", "website": "", "lat": None, "lon": None}])
 
     def test_demo_hotel_total_uses_requested_nights(self):
         for nights in (1, 5, 7):
@@ -85,6 +85,53 @@ class BookingLinkTests(unittest.TestCase):
              patch("travel._client", return_value=reply):
             rows = travel.search_flights("AUS", "CUN", "2027-01-22", "2027-01-29")
         self.assertEqual(rows[0]["stops"], 1)
+
+
+class MapDataTests(unittest.TestCase):
+    def search(self, reply, kind="flights"):
+        with patch.dict(os.environ, {"SERPAPI_KEY": "test-only-not-a-key"}), \
+             patch("travel._client", return_value=reply):
+            if kind == "flights":
+                return travel.search_flights("AUS", "CUN", "2027-01-22", "2027-01-29")
+            return travel.search_hotels("hotels in Cancun", "2027-01-22", "2027-01-29")
+
+    def test_flight_route_includes_layovers(self):
+        legs = [{"airline": "A", "departure_airport": {"id": "AUS"}, "arrival_airport": {"id": "MEX"}},
+                {"airline": "A", "departure_airport": {"id": "MEX"}, "arrival_airport": {"id": "CUN"}}]
+        rows = self.search({"best_flights": [{"price": 300, "total_duration": 300, "flights": legs}]})
+        self.assertEqual(rows[0]["route"], ["AUS", "MEX", "CUN"])
+
+    def test_flight_route_with_a_missing_airport_is_dropped(self):
+        legs = [{"airline": "A", "departure_airport": {"id": "AUS"}, "arrival_airport": {}}]
+        rows = self.search({"best_flights": [{"price": 300, "total_duration": 300, "flights": legs}]})
+        self.assertEqual(rows[0]["route"], [])
+
+    def test_hotel_coordinates_are_parsed_and_invalid_ones_dropped(self):
+        def hotel(name, gps):
+            return {"name": name, "rate_per_night": {"extracted_lowest": 90},
+                    "total_rate": {"extracted_lowest": 630}, "gps_coordinates": gps}
+        rows = self.search({"properties": [
+            hotel("Good", {"latitude": 21.12, "longitude": -86.75}),
+            hotel("Out of range", {"latitude": 123, "longitude": -86.75}),
+            hotel("Not a number", {"latitude": "x", "longitude": None}),
+            hotel("Missing", None)]}, kind="hotels")
+        self.assertEqual({r["name"]: (r["lat"], r["lon"]) for r in rows},
+                         {"Good": (21.12, -86.75), "Out of range": (None, None),
+                          "Not a number": (None, None), "Missing": (None, None)})
+
+    def test_airport_lookup(self):
+        aus = travel.airport_location("aus")
+        self.assertEqual((aus["code"], aus["city"]), ("AUS", "Austin"))
+        self.assertAlmostEqual(aus["lat"], 30.19, places=1)
+        self.assertAlmostEqual(aus["lon"], -97.66, places=1)
+        self.assertIsNone(travel.airport_location("ZZZ"))
+        self.assertIsNone(travel.airport_location(""))
+
+    def test_sample_data_has_routes_and_hotel_locations(self):
+        flights = travel.search_flights("AUS", "CUN", "2027-01-22", "2027-01-29", True)
+        self.assertEqual([f["route"] for f in flights], [["AUS", "CUN"], ["AUS", "CUN"], ["AUS", "DFW", "CUN"]])
+        hotels = travel.search_hotels("hotels in Cancun", "2027-01-22", "2027-01-29", True)
+        self.assertTrue(all(h["lat"] and h["lon"] for h in hotels))
 
 
 def decode_tfs(url: str) -> dict:

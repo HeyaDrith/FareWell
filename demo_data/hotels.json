@@ -1,5 +1,5 @@
 [
-  {"name": "Seaside Budget Inn", "per_night": 89.0, "total": 445.0, "rating": 3.9},
-  {"name": "Playa Palms Hotel", "per_night": 132.0, "total": 660.0, "rating": 4.3},
-  {"name": "Azure Resort & Spa", "per_night": 215.0, "total": 1075.0, "rating": 4.7}
+  {"name": "Seaside Budget Inn", "per_night": 89.0, "total": 445.0, "rating": 3.9, "lat": 21.1619, "lon": -86.8275},
+  {"name": "Playa Palms Hotel", "per_night": 132.0, "total": 660.0, "rating": 4.3, "lat": 21.1306, "lon": -86.7469},
+  {"name": "Azure Resort & Spa", "per_night": 215.0, "total": 1075.0, "rating": 4.7, "lat": 21.0786, "lon": -86.7739}
 ]

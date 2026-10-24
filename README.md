@@ -15,6 +15,14 @@ Nessie sandbox. Built at HackTX 26.
    cost. The budget is split 35% flights / 40% hotel / 15% food / 10% activities, and money left
    over in one part rolls into the parts not picked yet. Flight quality = shorter trip and fewer
    stops; hotel quality = guest rating. Food shows a per-day budget.
+   Every flight and hotel row has a **View ↗** link (and the hotel's website when Google lists
+   one), so options can be checked on Google Flights / Google Hotels **before** adding them.
+   A **map** above the lists has two tabs: **✈️ Flight path** draws the selected flight's outbound
+   route as great-circle arcs, layovers included (it follows the flight you add; a dropdown picks
+   any listed flight), and **🏨 Hotels on the map** plots the hotels near the destination airport
+   (🟢 in your trip, 🟡 recommended). Hover a dot for details. Airport coordinates come from
+   `demo_data/airports.json`, built from the public-domain [OurAirports](https://ourairports.com/data/)
+   data (large and medium airports with IATA codes); hotel locations come from SerpApi.
 5. The page shows Budget / Spent / Remaining / Saved and the **final trip cost**. ✕ removes a pick.
    Each pick gets **booking buttons** that open in a new tab:
    - **Hotels (live):** "Book this hotel" opens that exact hotel's Google Hotels page (from SerpApi's
@@ -119,7 +127,8 @@ python -m unittest discover -s tests -p test_planner.py -v
 | File | Job |
 |---|---|
 | `app.py` | Streamlit UI |
-| `travel.py` | SerpApi flights + hotels, booking/search links |
+| `travel.py` | SerpApi flights + hotels (routes, hotel coordinates), booking/search links, airport lookup |
+| `trip_map.py` | Flight path and hotel maps (pydeck, included with Streamlit) |
 | `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers, not used by the UI) |
 | `planner.py` | Typical price, savings, budget split and Recommended/Cheapest/Best quality (+ weekly savings math) |
 

@@ -3,6 +3,7 @@
 Sample travel data: flights $412 / $438 / $521 (typical $438); hotels $89 / $132 / $215
 per night x 7 nights = $623 / $924 / $1,505 (typical $924). Default budget $1,500.
 """
+import json
 import os
 import unittest
 from datetime import date, timedelta
@@ -205,6 +206,47 @@ class AppTripTests(DemoAppCase):
             ("Hotel website ↗", "https://realhotel.example/")])
         from test_travel import decode_tfs
         self.assertEqual(decode_tfs(self.link_buttons()[0][1])["legs"][0][3], ["WN"])  # airline filter
+
+    def test_options_can_be_viewed_before_adding(self):
+        self.assertIn("[View on Google Flights ↗](https://www.google.com/travel/flights/search?tfs=", self.plain_text())
+        hotel_links = [m.value for m in self.app.markdown if "[Find hotel ↗](" in m.value]
+        self.assertEqual(len(hotel_links), 3)  # one per sample hotel, before anything is added
+        self.assertIn("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Cancun", hotel_links[0])
+        flight_links = [m.value for m in self.app.markdown if "[View on Google Flights ↗](" in m.value]
+        self.assertEqual(len(flight_links), 3)
+        self.assertEqual(self.link_buttons(), [])  # the big booking buttons still come with picks
+
+    def test_view_links_keep_provider_urls_inside_the_markdown_link(self):
+        hotels = [{"name": "Paren Hotel", "per_night": 90.0, "total": 630.0, "rating": 4.4, "property_token": "",
+                   "website": "https://hotel.example/rooms (deluxe)", "lat": None, "lon": None}]
+        with patch("travel.search_hotels", return_value=hotels):
+            self.click("Start planning")
+        line = next(m.value for m in self.app.markdown if "Website ↗" in m.value)
+        self.assertIn("[Website ↗](https://hotel.example/rooms%20%28deluxe%29)", line)
+
+    def test_map_shows_flight_path_and_hotels(self):
+        decks = [json.loads(d.proto.json) for d in self.app.get("deck_gl_json_chart")]
+        self.assertEqual([t.label for t in self.app.tabs], ["✈️ Flight path", "🏨 Hotels on the map"])
+        route, hotels = decks
+        self.assertEqual([layer["@@type"] for layer in route["layers"]], ["ArcLayer", "ScatterplotLayer"])
+        self.assertEqual([p["label"] for p in route["layers"][1]["data"]], ["AUS · Austin", "CUN · Cancún"])
+        self.assertEqual(len(route["layers"][0]["data"]), 1)  # recommended Volaris: nonstop AUS -> CUN
+        self.assertLess(route["initialViewState"]["zoom"], 6)
+        self.assertEqual(len(hotels["layers"][0]["data"]), 3)  # every sample hotel has a location
+        self.assertIn("Volaris: AUS → CUN (nonstop)", self.plain_text())
+
+    def test_map_follows_the_selected_and_added_flight(self):
+        selector = next(s for s in self.app.selectbox if s.label == "Show the flight path for")
+        selector.set_value(2).run()  # American, 1 stop via DFW
+        route = json.loads(self.app.get("deck_gl_json_chart")[0].proto.json)
+        self.assertEqual([p["label"] for p in route["layers"][0]["data"]], ["AUS → DFW", "DFW → CUN"])
+        self.assertIn("American: AUS → DFW → CUN (layover in DFW)", self.plain_text())
+        self.add("flight-0")  # adding Southwest switches the map to it
+        self.assertIn("Southwest: AUS → CUN (nonstop)", self.plain_text())
+        self.add("hotel-0")
+        hotels = json.loads(self.app.get("deck_gl_json_chart")[1].proto.json)["layers"][0]["data"]
+        self.assertEqual(hotels[0]["status"], "picked")  # Seaside Budget Inn
+        self.assertNotIn("picked", [h["status"] for h in hotels[1:]])
 
     def test_picked_category_recommends_a_swap_within_budget(self):
         self.add("flight-0")  # Southwest $412

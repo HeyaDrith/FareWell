@@ -41,7 +41,7 @@ class DemoAppCase(unittest.TestCase):
         self.assertEqual(len(self.app.exception), 0)
 
     def add_extra(self, description, cost, category="Food"):
-        self.app.selectbox[0].set_value(category)
+        next(w for w in self.app.selectbox if w.label == "Type").set_value(category)
         next(w for w in self.app.text_input if w.label == "What").input(description)
         next(w for w in self.app.number_input if w.label == "Cost ($)").set_value(cost)
         self.click("Add to trip")
