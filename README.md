@@ -40,6 +40,26 @@ python -m unittest discover -s tests -p test_planner.py -v
 | `bank.py` | Nessie accounts + transfers |
 | `planner.py` | Savings-plan math |
 
+## Funding contract and limits
+- Existing `setup_accounts(demo=False)`, `get_balance(account_id, demo=False)`,
+  and `transfer(from_id, to_id, amount, demo=False)` signatures remain unchanged.
+- Demo account IDs are opaque and unique per account pair. Always use the IDs returned
+  by `setup_accounts`; do not hard-code IDs or read the private `_DEMO` store.
+- Transfers require a positive, finite dollar amount with at most two decimal places
+  and enough checking funds. Validation raises `ValueError` before submission.
+- The website hides transfers when a goal is funded or checking funds are insufficient.
+  Each browser session keeps separate demo and Nessie account selections.
+- Nessie requests use `https://prod-api.nessieisreal.com` with TLS verification and
+  redirects disabled. No fallback sends a credential over HTTP. Service failures raise
+  `BankError` with safe text instead of a URL containing the API key.
+- A successful live request means submitted, not settled. After a live submission or
+  uncertain failure, this prototype pauses further transfers for that wallet/session.
+  Verify the transfer in Nessie; status reconciliation is not implemented yet.
+- Demo balances live only in server memory and are isolated by account pair. A restart
+  loses them; abandoned pairs remain until restart. This is not persistent group banking.
+- Live service availability and authenticated account/transfer behavior still need a
+  smoke test by the banking owner. Automated tests never use actual API credentials.
+
 ## Notes
 - Nessie is a sandbox: money is fake, so "automated saving" is simulated.
 - "Run this week's transfer" stands in for a weekly scheduler in the demo.

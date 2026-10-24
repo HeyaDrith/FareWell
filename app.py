@@ -76,26 +76,51 @@ if flights and hotels:
         st.warning(str(error))
         st.stop()
 
-    if "accounts" not in st.session_state:
+    bank_demo = demo or not os.getenv("NESSIE_API_KEY")
+    wallets = st.session_state.setdefault("wallets", {})
+    wallet = wallets.setdefault("demo" if bank_demo else "nessie", {})
+    st.caption("Funding uses simulated demo money." if bank_demo else "Funding uses the Nessie sandbox.")
+    if "accounts" not in wallet:
         if st.button("Create my Trip Fund"):
-            st.session_state.accounts = bank.setup_accounts(demo)
-            st.rerun()
+            try:
+                wallet["accounts"] = bank.setup_accounts(bank_demo)
+            except Exception:
+                st.error("Could not create the Trip Fund. Check the banking service before trying again.")
+            else:
+                st.rerun()
     else:
-        acc = st.session_state.accounts
-        saved = bank.get_balance(acc["fund_id"], demo)
+        acc = wallet["accounts"]
+        try:
+            saved = bank.get_balance(acc["fund_id"], bank_demo)
+            checking = bank.get_balance(acc["checking_id"], bank_demo)
+        except Exception:
+            st.error("Could not load account balances. Funding is paused until balances are available.")
+            st.stop()
         weekly = planner.weekly_amount(budget, saved, deadline)
 
         st.progress(min(1.0, saved / budget) if budget else 0.0,
                     text=f"${saved:,.0f} of ${budget:,.0f} saved")
         contribution_timing = "today" if deadline == date.today() else "per week"
         st.write(f"**Plan:** move **${weekly:,.2f} {contribution_timing}** from checking "
-                 f"(balance ${bank.get_balance(acc['checking_id'], demo):,.0f}).")
+                 f"(balance ${checking:,.2f}).")
 
-        # In the demo, one click = one week passing.
-        transfer_label = "Transfer today" if deadline == date.today() else "Run this week's transfer"
-        if st.button(f"{transfer_label} (${weekly:,.2f})"):
-            bank.transfer(acc["checking_id"], acc["fund_id"], weekly, demo)
-            st.rerun()
-
-        if saved >= budget:
+        if weekly == 0:
             st.success("🎉 Trip fully funded. Time to book!")
+        elif wallet.get("transfer_pending"):
+            st.warning("A transfer was submitted or could not be confirmed. Check its status in Nessie before sending more money. Further transfers are paused in this session.")
+        elif weekly > checking:
+            st.warning("Not enough money in checking for this contribution. Add funds or revise your plan.")
+        else:
+            # A click submits one contribution; it does not advance the date.
+            transfer_label = "Transfer today" if deadline == date.today() else "Run this week's transfer"
+            if st.button(f"{transfer_label} (${weekly:,.2f})"):
+                wallet["transfer_pending"] = not bank_demo
+                try:
+                    bank.transfer(acc["checking_id"], acc["fund_id"], weekly, bank_demo)
+                except ValueError:
+                    wallet["transfer_pending"] = False
+                    st.error("The transfer was not sent. Check the amount and available checking funds.")
+                except Exception:
+                    st.error("Could not confirm the transfer. Check its status before trying again.")
+                else:
+                    st.rerun()
