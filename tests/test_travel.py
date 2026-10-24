@@ -176,3 +176,22 @@ def decode_tfs(url: str) -> dict:
         elif field in (8, 9, 19):
             out[{8: "passengers", 9: "seat", 19: "trip"}[field]] = value
     return out
+
+
+class EncodingTests(unittest.TestCase):
+    def test_demo_data_loads_without_a_utf8_system_default(self):
+        """Windows reads files as cp1252 by default; demo data must still load (e.g. "Sŏndŏng-ni")."""
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(travel.__file__).resolve().parent
+        env = {**os.environ, "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0", "LC_ALL": "C", "LANG": "C"}
+        script = ("import travel\n"
+                  "for name in ('airports.json', 'flights.json', 'hotels.json'):\n"
+                  "    travel._load_demo(name)\n"
+                  "print(travel.airport_location('CUN') is not None)\n")
+        result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "True")
