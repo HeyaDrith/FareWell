@@ -1,0 +1,5 @@
+[
+  {"name": "Seaside Budget Inn", "per_night": 89.0, "total": 445.0, "rating": 3.9},
+  {"name": "Playa Palms Hotel", "per_night": 132.0, "total": 660.0, "rating": 4.3},
+  {"name": "Azure Resort & Spa", "per_night": 215.0, "total": 1075.0, "rating": 4.7}
+]
