@@ -73,21 +73,33 @@ for key, default in {
     ss.setdefault(key, default)
 budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
 c1, c2 = st.columns(2)
-origin = (c1.text_input("From (airport code)", key="trip_origin") or "").upper()
-dest = (c2.text_input("To (airport code)", key="trip_destination") or "").upper()
+# Searchable airport dropdowns: type a city or code and the list filters as you type.
+airports = travel.airport_codes()
+for key in ("trip_origin", "trip_destination"):
+    code = (ss.get(key) or "").strip().upper()
+    ss[key] = code or None
+    if code and code not in airports:  # e.g. a smaller airport typed in or from a Gemini draft
+        airports = [code] + airports
+
+
+def follow_destination():
+    """Picking a destination fills in the hotel search for that city."""
+    code = (ss.get("trip_destination") or "").strip().upper()
+    if travel.airport_city(code):
+        ss.trip_city = f"hotels in {travel.airport_city(code)}"
+
+
+origin = (c1.selectbox("From", airports, index=None, key="trip_origin", format_func=travel.airport_label,
+                       accept_new_options=True, placeholder="Type a city or airport code")
+          or "").strip().upper()
+dest = (c2.selectbox("To", airports, index=None, key="trip_destination", format_func=travel.airport_label,
+                     accept_new_options=True, placeholder="Type a city or airport code",
+                     on_change=follow_destination) or "").strip().upper()
 depart = c1.date_input("Depart", value=None, key="trip_depart")
 ret = c2.date_input("Return", value=None, key="trip_return")
 city = st.text_input("Hotel search", key="trip_city") or ""
 
-date_error = None
-if depart is None:
-    date_error = "Choose a departure date."
-elif ret is None:
-    date_error = "Choose a return date."
-elif depart < date.today():
-    date_error = "Departure must be today or later."
-elif ret <= depart:
-    date_error = "Return must be after departure."
+date_error = planner.trip_input_error(origin, dest, depart, ret)
 
 start = st.button("Start planning", type="primary", disabled=bool(date_error))
 if date_error:

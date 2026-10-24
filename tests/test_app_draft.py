@@ -33,13 +33,13 @@ class AppDraftTests(DemoAppCase):
         self.app.text_input(key="draft_review_origin").set_value("LAX")
         self.click("Apply reviewed draft")
         self.assertIn("check the confirmation box", self.visible_text())
-        self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
         trips_before = {k: list(v["picks"]) for k, v in bank._TRIPS.items()}
         with patch("travel.search_flights") as flights, patch("travel.search_hotels") as hotels, \
              patch("bank.create_trip") as create, patch("bank.record_pick") as pick:
             self.acknowledge()
             self.click("Apply reviewed draft")
-            self.assertEqual(self.app.text_input(key="trip_origin").value, "LAX")
+            self.assertEqual(self.app.selectbox(key="trip_origin").value, "LAX")
             self.assertIn("Trip details changed", self.visible_text())
             for mock in (flights, hotels, create, pick):
                 mock.assert_not_called()
@@ -63,7 +63,7 @@ class AppDraftTests(DemoAppCase):
         self.app.text_area(key="ai_chat_1").set_value("Actually, we want a different trip.").run()
         self.assertIn("Create a new draft before applying", self.visible_text())
         self.assertFalse(any(button.label == "Apply reviewed draft" for button in self.app.button))
-        self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
 
     def test_review_rejects_invalid_airport_budget_and_dates(self):
         self.click("Load example draft (no API)")
@@ -79,7 +79,7 @@ class AppDraftTests(DemoAppCase):
         self.app.date_input(key="draft_review_return").set_value(date.today())
         self.click("Apply reviewed draft")
         self.assertIn("return after departure", self.visible_text())
-        self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
 
     def test_group_budget_stays_a_note_and_is_not_used_as_trip_budget(self):
         self.click("Load example draft (no API)")
@@ -103,7 +103,7 @@ class AppDraftTests(DemoAppCase):
             self.click("Create trip draft")
             extract.assert_called_once_with("We cannot agree on a weekend.", None, demo=False)
             self.assertIn("contains disagreements", self.visible_text())
-            self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+            self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
             self.assertEqual(self.app.text_input(key="draft_review_origin").value, "")
             self.assertIsNone(self.app.date_input(key="draft_review_depart").value)
             self.acknowledge()
@@ -117,7 +117,7 @@ class AppDraftTests(DemoAppCase):
             self.app.text_area(key="ai_chat_0").set_value("Trip plans").run()
             self.click("Create trip draft")
             self.assertIn("could not create a usable draft", self.visible_text())
-            self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+            self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
             self.add("flight-0")
             self.assertEqual(self.metrics()["Spent"], "$412")
 
@@ -141,7 +141,7 @@ class AppDraftTests(DemoAppCase):
         self.assertEqual(self.app.text_area(key="ai_chat_2").value, "")
         self.assertNotIn("ai_draft", self.app.session_state)
         self.assertFalse(any(button.label == "Apply reviewed draft" for button in self.app.button))
-        self.assertEqual(self.app.text_input(key="trip_origin").value, "AUS")
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
 
     def test_short_notice_draft_plans_without_errors(self):
         self.click("Load example draft (no API)")

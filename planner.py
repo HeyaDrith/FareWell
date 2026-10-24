@@ -122,3 +122,24 @@ def pick_options(prices: list[float], qualities: list[float], allowance: float) 
     fitting = [i for i in idx if prices[i] <= allowance]
     recommended = max(fitting, key=lambda i: (qualities[i], -prices[i])) if fitting else cheapest
     return {"recommended": recommended, "cheapest": cheapest, "best_quality": best}
+
+
+def trip_input_error(origin: str, dest: str, depart: date | None, ret: date | None,
+                     today: date | None = None) -> str | None:
+    """Why the trip form can't be planned yet, or None when airports and dates are usable."""
+    today = today or date.today()
+    if not origin or not dest:
+        return "Choose where you're flying from and to."
+    if not (len(origin) == 3 and origin.isalpha() and len(dest) == 3 and dest.isalpha()):
+        return "Airports need a 3-letter code. Pick one from the list."
+    if origin == dest:
+        return "Choose two different airports."
+    if depart is None:
+        return "Choose a departure date."
+    if ret is None:
+        return "Choose a return date."
+    if depart < today:
+        return "Departure must be today or later."
+    if ret <= depart:
+        return "Return must be after departure."
+    return None
