@@ -30,6 +30,50 @@ Keys are optional for the demo. For live integrations, store them only in a loca
 `.env` or Streamlit's secret settings. `.env.example` contains empty placeholders.
 Never commit filled environment files or `secrets.toml`.
 
+## Gemini: turn the group chat into a trip
+This optional feature sits above the existing trip form. It extracts an editable draft
+from pasted text, a PNG/JPEG screenshot, or both. Airports, dates, hotel city, traveler
+count, budget scope/currency, and preferences are reviewed before use. Missing details
+and disagreements are shown instead of silently treating them as group agreement.
+
+To try it without credentials:
+1. Install the updated requirements (tested with Python 3.12).
+2. Open **Turn our group chat into a trip**.
+3. Select **Load example draft (no API)**. This is a fixed example, not AI analysis.
+4. Edit the draft, check the review confirmation, and select **Apply reviewed draft**.
+5. Select **Start planning** in the normal trip form, then pick your options.
+
+For Gemini itself, configure `GEMINI_API_KEY` privately in `.env` or Streamlit secrets,
+restart the app, turn off **Demo AI drafts** in the sidebar, and select **Create trip draft** after pasting
+text or uploading a screenshot. `GEMINI_MODEL` is an optional override; the default is
+`gemini-3.5-flash-lite`, a model with image and structured-output support documented by
+[Google](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite).
+The Gemini key is independent of the SerpApi/Nessie keys. If those are absent, their
+existing demo fallbacks still apply and remain labeled.
+
+- A draft never automatically searches, books, creates an account, or transfers money.
+  Applying it fills the reviewed search fields. A per-person USD budget also fills the
+  **Total trip budget** field; a group budget stays a planning note.
+- Changed source text or a replaced screenshot invalidates the old editable draft.
+- Per-person USD budget limits are compared with the one-traveler trip cost so far.
+  Group size, group budgets, and interests remain planning notes: the current search
+  quotes one traveler and one room. It does not yet price shared accommodation, generate
+  a verified itinerary, search activities/restaurants, or coordinate votes.
+- Submitted text and image pixels go to Google only after **Create trip draft** is clicked.
+  Remove private content first; model instructions cannot guarantee redaction. Images are
+  checked for actual PNG/JPEG format, limited to 4 MB / 12 million pixels, resized to at
+  most 2000 pixels per side, and stripped of metadata in memory. This app never saves
+  uploads to disk or logs prompts/replies. Google's handling of submissions is separate.
+- Input is capped at 12,000 characters. Requests have a 25-second timeout and one attempt,
+  with no tools, fixed HTTPS transport, and no redirects. Failures leave the manual flow usable.
+- **Clear chat and draft** removes the input widgets and editable draft from the session.
+  Already-confirmed trip fields and planning notes remain until replaced or the session ends.
+- Tests use mocked Gemini responses and an offline SDK transport. A real authenticated
+  Gemini request and model extraction accuracy still need a smoke test with a configured key.
+
+`trip_draft.py` owns extraction, validation, and the offline example. `draft_ui.py` owns
+review and confirmation. Existing `travel.py`, `planner.py`, and `bank.py` APIs are unchanged.
+
 ## Check the planner and website
 After installing `requirements.txt`, run the calculation and Streamlit flow tests:
 ```bash
@@ -72,6 +116,9 @@ python -m unittest discover -s tests -p test_planner.py -v
 - Nessie requests use `https://prod-api.nessieisreal.com` with TLS verification and
   redirects disabled. No fallback sends a credential over HTTP. Service failures raise
   `BankError` with safe text instead of a URL containing the API key.
+- The live transfer adapter uses whole-dollar amounts and records a completed withdrawal plus
+  a deposit (two requests), deriving balances from those records. Verify both records before
+  retrying after an uncertain failure.
 - Demo balances live only in server memory and are isolated by account pair. A restart
   loses them; abandoned pairs remain until restart. This is not persistent group banking.
 - Live service availability and authenticated account/transfer behavior still need a
@@ -103,8 +150,8 @@ python -m unittest discover -s tests -p test_planner.py -v
   check with a real key. See [Nessie](https://nessieisreal.com/docs) and
   [SerpApi hotel totals](https://serpapi.com/google-hotels-api).
 - Teammates' unpublished work cannot be checked here. Re-run the suite after their branches
-  are integrated. Persistent group plans, voting, authentication, a scheduler, and Gemini
-  are outside this prototype's current implementation.
+  are integrated. Persistent group plans, voting, authentication, a scheduler, and full
+  group pricing are outside this prototype's current implementation.
 
 ## Devpost checklist
 - [ ] What it does / how we built it / challenges / what's next
