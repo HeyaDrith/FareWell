@@ -37,7 +37,7 @@ count, budget scope/currency, and preferences are reviewed before use. Missing d
 and disagreements are shown instead of silently treating them as group agreement.
 
 To try it without credentials:
-1. Install the updated requirements (tested with Python 3.12).
+1. Install the updated requirements (works on Python 3.10 through 3.12).
 2. Open **Turn our group chat into a trip**.
 3. Select **Load example draft (no API)**. This is a fixed example, not AI analysis.
 4. Edit the draft, check the review confirmation, and select **Apply reviewed draft**.
