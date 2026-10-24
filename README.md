@@ -10,7 +10,24 @@ Nessie sandbox. Built at HackTX 26.
    **fits** what's left of the budget, and how much it **saves** vs. typical.
 3. Each pick becomes a Nessie **purchase** on a "Trip Budget" account. Money saved vs. typical
    is a Nessie **deposit** into a "Trip Savings" account. Food and activities are added by hand.
-4. The page shows Budget / Spent / Remaining / Saved and the **final trip cost**. ✕ removes a pick.
+4. Each flight and hotel list highlights **⭐ Recommended** (best quality that fits that part
+   of the budget), **💰 Cheapest** and **✨ Best quality**, with a one-line reason and the upgrade
+   cost. The budget is split 35% flights / 40% hotel / 15% food / 10% activities, and money left
+   over in one part rolls into the parts not picked yet. Flight quality = shorter trip and fewer
+   stops; hotel quality = guest rating. Food shows a per-day budget.
+5. The page shows Budget / Spent / Remaining / Saved and the **final trip cost**. ✕ removes a pick.
+   Each pick gets **booking buttons** that open in a new tab:
+   - **Hotels (live):** "Book this hotel" opens that exact hotel's Google Hotels page (from SerpApi's
+     `property_token`), which lists every booking site and price; "Hotel website" opens its own site.
+   - **Flights (live):** "Book on Google Flights" opens the Google Flights results page for that round
+     trip, filtered to the picked flight's airline (Google's `tfs` link format, as used by the
+     open-source fast-flights project); the app shows the flight number and departure time so the
+     user can tap the matching listing. SerpApi has no plain booking URL for flights: its booking step
+     (`booking_token`) returns a form post to Google and costs extra searches per flight.
+   - **Food/activities:** "Open in Google Maps". **Sample data** isn't real listings, so its buttons
+     open a matching search. The hotel page link still needs a check with a live SerpApi key.
+6. **🔒 Lock in my trip** freezes the picks and shows a confirmation number and summary. This is a
+   **demo confirmation**: nothing is reserved or charged. **Unlock to make changes** reopens it.
 
 ## Run it
 ```bash
@@ -102,9 +119,9 @@ python -m unittest discover -s tests -p test_planner.py -v
 | File | Job |
 |---|---|
 | `app.py` | Streamlit UI |
-| `travel.py` | SerpApi flights + hotels |
+| `travel.py` | SerpApi flights + hotels, booking/search links |
 | `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers, not used by the UI) |
-| `planner.py` | Typical price / savings math (+ weekly savings math) |
+| `planner.py` | Typical price, savings, budget split and Recommended/Cheapest/Best quality (+ weekly savings math) |
 
 ## Trip Fund transfer contract (kept in `bank.py`, not shown in the UI yet)
 - Existing `setup_accounts(demo=False)`, `get_balance(account_id, demo=False)`,

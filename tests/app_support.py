@@ -52,6 +52,9 @@ class DemoAppCase(unittest.TestCase):
     def add_buttons(self):
         return [b for b in self.app.button if b.label == "Add"]
 
+    def link_buttons(self):
+        return [(button.proto.label, button.proto.url) for button in self.app.get("link_button")]
+
     def visible_text(self):
         return "\n".join(str(element.value) for kind in
                          ("warning", "error", "markdown", "info", "success", "caption")

@@ -70,3 +70,55 @@ def typical_price(prices: list[float]) -> float:
 def savings_vs_typical(price: float, typical: float) -> float:
     """How much cheaper than typical an option is (0 if it costs the same or more)."""
     return round(max(0.0, typical - price), 2)
+
+
+# ---------- Budget split and recommendations ----------
+
+# Default share of the trip budget for each part of the trip.
+BUDGET_SPLIT = {"Flight": 0.35, "Hotel": 0.40, "Food": 0.15, "Activity": 0.10}
+
+
+def category_allowance(category: str, remaining: float, picked: set[str] | list[str] = ()) -> float:
+    """How much of what's left to plan for `category`.
+
+    Money left over in a part of the trip rolls into the parts not picked yet: the remaining
+    budget is split by BUDGET_SPLIT among `category` and every category not in `picked`.
+    """
+    if category not in BUDGET_SPLIT or remaining <= 0:
+        return 0.0
+    pool = {c for c in BUDGET_SPLIT if c not in set(picked)} | {category}
+    share = BUDGET_SPLIT[category] / sum(BUDGET_SPLIT[c] for c in pool)
+    return round(remaining * share, 2)
+
+
+def flight_quality(flight: dict, shortest_min: int) -> float:
+    """0-5 score: shorter trips and fewer stops score higher."""
+    duration = flight.get("duration_min") or 0
+    speed = (shortest_min / duration) if duration and shortest_min else 0.5
+    return round(max(0.0, min(5.0, 5 * speed - 0.75 * int(flight.get("stops") or 0))), 2)
+
+
+def hotel_quality(hotel: dict) -> float:
+    """0-5 score from the guest rating (missing ratings count as 0)."""
+    try:
+        return round(max(0.0, min(5.0, float(hotel.get("rating") or 0))), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def pick_options(prices: list[float], qualities: list[float], allowance: float) -> dict:
+    """Indexes for the three highlighted options (None when there are no options).
+
+    - "cheapest": lowest price.
+    - "recommended": best quality that fits `allowance` (ties go to the cheaper option);
+      if nothing fits, the cheapest.
+    - "best_quality": best quality overall (ties go to the cheaper option).
+    """
+    if not prices:
+        return {"recommended": None, "cheapest": None, "best_quality": None}
+    idx = range(len(prices))
+    cheapest = min(idx, key=lambda i: (prices[i], -qualities[i]))
+    best = max(idx, key=lambda i: (qualities[i], -prices[i]))
+    fitting = [i for i in idx if prices[i] <= allowance]
+    recommended = max(fitting, key=lambda i: (qualities[i], -prices[i])) if fitting else cheapest
+    return {"recommended": recommended, "cheapest": cheapest, "best_quality": best}
