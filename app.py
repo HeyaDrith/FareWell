@@ -12,11 +12,12 @@ from dotenv import load_dotenv
 import bank
 import planner
 import travel
+import draft_ui
 
 load_dotenv()
 # On Streamlit Community Cloud, keys live in st.secrets instead of .env.
 try:
-    for k in ("SERPAPI_KEY", "NESSIE_API_KEY"):
+    for k in ("SERPAPI_KEY", "NESSIE_API_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"):
         if k in st.secrets:
             os.environ.setdefault(k, st.secrets[k])
 except Exception:
@@ -27,15 +28,22 @@ st.title("✈️ Trip Saver")
 st.caption("Find a trip, plan your weekly savings, and contribute to your Trip Fund.")
 
 demo = st.sidebar.toggle("Demo mode (cached data, no API calls)", value=not os.getenv("SERPAPI_KEY"))
+draft_ui.render_draft_panel(demo)
 
 # ---- 1. Search ----
 st.header("1. Plan your trip")
+for key, default in {
+    "trip_origin": "AUS", "trip_destination": "CUN", "trip_city": "hotels in Cancun",
+    "trip_depart": date.today() + timedelta(days=90),
+    "trip_return": date.today() + timedelta(days=97),
+}.items():
+    st.session_state.setdefault(key, default)
 c1, c2 = st.columns(2)
-origin = c1.text_input("From (airport code)", "AUS").upper()
-dest = c2.text_input("To (airport code)", "CUN").upper()
-depart = c1.date_input("Depart", date.today() + timedelta(days=90))
-ret = c2.date_input("Return", date.today() + timedelta(days=97))
-city = st.text_input("Hotel search", "hotels in Cancun")
+origin = (c1.text_input("From (airport code)", value=None, key="trip_origin") or "").upper()
+dest = (c2.text_input("To (airport code)", value=None, key="trip_destination") or "").upper()
+depart = c1.date_input("Depart", value=None, key="trip_depart")
+ret = c2.date_input("Return", value=None, key="trip_return")
+city = st.text_input("Hotel search", value=None, key="trip_city") or ""
 
 date_error = None
 if depart is None:
@@ -51,6 +59,10 @@ search_clicked = st.button("Search prices", type="primary", disabled=bool(date_e
 if date_error:
     st.warning(date_error)
     st.stop()
+
+search_fields = {"trip_origin": origin, "trip_destination": dest, "trip_city": city,
+                 "trip_depart": depart, "trip_return": ret}
+draft_ui.render_planning_notes(search_fields)
 
 search_details = (origin, dest, depart, ret, city, demo, bool(os.getenv("SERPAPI_KEY")))
 if search_clicked:
@@ -96,11 +108,13 @@ if flights and hotels:
     budget = planner.trip_budget(flights[f_pick]["price"], hotels[h_pick]["total"], activities)
     st.session_state.last_price = budget
     st.metric("Trip budget", f"${budget:,.0f}")
+    draft_ui.render_planning_notes(search_fields, budget)
     st.info(planner.price_trend(st.session_state.get("prev_price"), budget))
 
     # ---- 2. Fund ----
     st.header("2. Fund it")
-    deadline = st.date_input("Save by", date.today() + timedelta(days=60), key="deadline")
+    st.session_state.setdefault("deadline", min(date.today() + timedelta(days=60), depart))
+    deadline = st.date_input("Save by", value=None, key="deadline")
 
     try:
         planner.validate_deadline(deadline, departure=depart)

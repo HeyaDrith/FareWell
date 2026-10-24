@@ -13,7 +13,7 @@ APP = Path(__file__).resolve().parents[1] / "app.py"
 class DemoAppCase(unittest.TestCase):
     def setUp(self):
         for context in (
-            patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "",
+            patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "GEMINI_API_KEY": "",
                                     "PYTHON_DOTENV_DISABLED": "1"}),
             patch.dict(bank._DEMO, {}, clear=True),
         ):
