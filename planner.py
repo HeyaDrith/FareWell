@@ -4,9 +4,26 @@ from datetime import date
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
 
-def weeks_until(deadline: date, today: date | None = None) -> int:
-    """Whole weeks from today to the deadline (minimum 1)."""
+def validate_deadline(deadline: date, today: date | None = None,
+                      departure: date | None = None) -> None:
+    """Raise ValueError for a missing, expired, or post-departure deadline.
+
+    A deadline today is valid and requires the remaining contribution today.
+    Departure is optional because the arithmetic helpers do not know the trip.
+    """
     today = today or date.today()
+    if not isinstance(deadline, date):
+        raise ValueError("Choose a booking deadline.")
+    if deadline < today:
+        raise ValueError("Your booking deadline has passed. Choose today or a later date.")
+    if departure is not None and deadline > departure:
+        raise ValueError("Your booking deadline must be on or before your departure date.")
+
+
+def weeks_until(deadline: date, today: date | None = None) -> int:
+    """Saving periods until a valid deadline; a deadline today has one period."""
+    today = today or date.today()
+    validate_deadline(deadline, today=today)
     days = (deadline - today).days
     return max(1, math.ceil(days / 7))
 
@@ -17,6 +34,7 @@ def weekly_amount(target: float, saved: float, deadline: date, today: date | Non
     Keep the float interface used by the UI and bank client. Normalize the
     remaining balance to cents before division to avoid floating-point noise.
     Recalculate after contributions so the final payment covers only the gap.
+    Raises ValueError for an expired or missing deadline.
     """
     cent = Decimal("0.01")
     remaining = max(Decimal("0.00"), Decimal(str(target)) - Decimal(str(saved)))

@@ -67,6 +67,15 @@ if flights and hotels:
     st.header("2. Fund it")
     deadline = st.date_input("Save by", date.today() + timedelta(days=60), key="deadline")
 
+    if depart is None:
+        st.warning("Choose a departure date before setting up your savings plan.")
+        st.stop()
+    try:
+        planner.validate_deadline(deadline, departure=depart)
+    except ValueError as error:
+        st.warning(str(error))
+        st.stop()
+
     if "accounts" not in st.session_state:
         if st.button("Create my Trip Fund"):
             st.session_state.accounts = bank.setup_accounts(demo)
@@ -78,11 +87,13 @@ if flights and hotels:
 
         st.progress(min(1.0, saved / budget) if budget else 0.0,
                     text=f"${saved:,.0f} of ${budget:,.0f} saved")
-        st.write(f"**Plan:** move **${weekly:,.2f}/week** from checking "
+        contribution_timing = "today" if deadline == date.today() else "per week"
+        st.write(f"**Plan:** move **${weekly:,.2f} {contribution_timing}** from checking "
                  f"(balance ${bank.get_balance(acc['checking_id'], demo):,.0f}).")
 
         # In the demo, one click = one week passing.
-        if st.button(f"Run this week's transfer (${weekly:,.2f})"):
+        transfer_label = "Transfer today" if deadline == date.today() else "Run this week's transfer"
+        if st.button(f"{transfer_label} (${weekly:,.2f})"):
             bank.transfer(acc["checking_id"], acc["fund_id"], weekly, demo)
             st.rerun()
 

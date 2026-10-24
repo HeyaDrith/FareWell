@@ -6,6 +6,39 @@ from decimal import Decimal
 import planner
 
 
+class DeadlineTests(unittest.TestCase):
+    TODAY = date(2026, 10, 24)
+
+    def test_expired_deadlines_are_rejected_by_both_arithmetic_helpers(self):
+        yesterday = self.TODAY - timedelta(days=1)
+        with self.assertRaisesRegex(ValueError, "deadline has passed"):
+            planner.weeks_until(yesterday, self.TODAY)
+        with self.assertRaisesRegex(ValueError, "deadline has passed"):
+            planner.weekly_amount(100.0, 20.0, yesterday, self.TODAY)
+
+    def test_missing_deadline_has_a_useful_error(self):
+        with self.assertRaisesRegex(ValueError, "Choose a booking deadline"):
+            planner.weekly_amount(100.0, 20.0, None, self.TODAY)
+
+    def test_today_requires_the_full_remaining_amount(self):
+        self.assertEqual(planner.weeks_until(self.TODAY, self.TODAY), 1)
+        self.assertEqual(planner.weekly_amount(100.0, 20.0, self.TODAY, self.TODAY), 80.0)
+
+    def test_booking_after_departure_is_rejected(self):
+        departure = self.TODAY + timedelta(days=10)
+        with self.assertRaisesRegex(ValueError, "on or before your departure"):
+            planner.validate_deadline(departure + timedelta(days=1), self.TODAY, departure)
+
+    def test_booking_on_departure_is_valid(self):
+        departure = self.TODAY + timedelta(days=10)
+        self.assertIsNone(planner.validate_deadline(departure, self.TODAY, departure))
+
+    def test_future_week_boundaries_preserve_existing_behavior(self):
+        for days, periods in [(1, 1), (7, 1), (8, 2), (14, 2), (15, 3)]:
+            with self.subTest(days=days):
+                self.assertEqual(planner.weeks_until(self.TODAY + timedelta(days=days), self.TODAY), periods)
+
+
 class WeeklyAmountTests(unittest.TestCase):
     TODAY = date(2026, 10, 24)
 
