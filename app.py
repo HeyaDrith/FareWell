@@ -1,4 +1,4 @@
-"""Trip Saver: plan a trip with live prices and fund it automatically.
+"""Trip Saver: plan a trip with live prices and make savings contributions.
 
 Run:  streamlit run app.py
 """
@@ -23,7 +23,7 @@ except Exception:
 
 st.set_page_config(page_title="Trip Saver", page_icon="✈️")
 st.title("✈️ Trip Saver")
-st.caption("Find a trip, then let your Trip Fund save for it automatically.")
+st.caption("Find a trip, plan your weekly savings, and contribute to your Trip Fund.")
 
 demo = st.sidebar.toggle("Demo mode (cached data, no API calls)", value=not os.getenv("SERPAPI_KEY"))
 
@@ -36,20 +36,54 @@ depart = c1.date_input("Depart", date.today() + timedelta(days=90))
 ret = c2.date_input("Return", date.today() + timedelta(days=97))
 city = st.text_input("Hotel search", "hotels in Cancun")
 
-if st.button("Search prices", type="primary"):
+date_error = None
+if depart is None:
+    date_error = "Choose a departure date before searching or funding your trip."
+elif ret is None:
+    date_error = "Choose a return date before searching or funding your trip."
+elif depart < date.today():
+    date_error = "Departure must be today or later."
+elif ret <= depart:
+    date_error = "Return must be after departure."
+
+search_clicked = st.button("Search prices", type="primary", disabled=bool(date_error))
+if date_error:
+    st.warning(date_error)
+    st.stop()
+
+search_details = (origin, dest, depart, ret, city, demo, bool(os.getenv("SERPAPI_KEY")))
+if search_clicked:
+    cached_prices = demo or not os.getenv("SERPAPI_KEY")
+    search_failed = False
     with st.spinner("Searching..."):
         try:
-            st.session_state.flights = travel.search_flights(origin, dest, str(depart), str(ret), demo)
-            st.session_state.hotels = travel.search_hotels(city, str(depart), str(ret), demo)
-        except Exception as e:  # keep the demo alive if an API hiccups
-            st.warning(f"Live search failed ({e}). Showing cached demo data.")
-            st.session_state.flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
-            st.session_state.hotels = travel.search_hotels(city, str(depart), str(ret), True)
+            new_flights = travel.search_flights(origin, dest, str(depart), str(ret), demo)
+            new_hotels = travel.search_hotels(city, str(depart), str(ret), demo)
+        except Exception:  # Never display exceptions that may include API credentials.
+            search_failed = cached_prices = True
+            new_flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
+            new_hotels = travel.search_hotels(city, str(depart), str(ret), True)
     # remember last price for the trend message
-    st.session_state.prev_price = st.session_state.get("last_price")
+    same_trip = st.session_state.get("search_details") == search_details
+    same_source = st.session_state.get("cached_prices") == cached_prices
+    st.session_state.prev_price = st.session_state.get("last_price") if same_trip and same_source else None
+    st.session_state.update(flights=new_flights, hotels=new_hotels, search_details=search_details,
+                            cached_prices=cached_prices, search_failed=search_failed)
+
+if "search_details" in st.session_state:
+    if st.session_state.search_details != search_details:
+        st.info("Trip details changed. Search prices again before funding this trip.")
+        st.stop()
+    if st.session_state.search_failed:
+        st.warning("Live search was unavailable. Showing sample prices, not live quotes.")
+    elif st.session_state.cached_prices:
+        st.caption("Sample prices for the demo; these are not live travel quotes.")
 
 flights = st.session_state.get("flights")
 hotels = st.session_state.get("hotels")
+
+if "search_details" in st.session_state and not (flights and hotels):
+    st.warning("No matching flights or hotels with complete prices. Try different dates or a different destination.")
 
 if flights and hotels:
     f_pick = st.selectbox("Flight", range(len(flights)),
@@ -67,9 +101,6 @@ if flights and hotels:
     st.header("2. Fund it")
     deadline = st.date_input("Save by", date.today() + timedelta(days=60), key="deadline")
 
-    if depart is None:
-        st.warning("Choose a departure date before setting up your savings plan.")
-        st.stop()
     try:
         planner.validate_deadline(deadline, departure=depart)
     except ValueError as error:

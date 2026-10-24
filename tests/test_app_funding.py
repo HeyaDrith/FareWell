@@ -15,7 +15,7 @@ class AppFundingTests(DemoAppCase):
         self.app.run()
         self.assertIn("Not enough money", self.visible_text())
         self.assertFalse(any("transfer" in button.label.lower() for button in self.app.button))
-        balances.update(checking=1943.0, fund=1057.0)
+        balances.update(checking=1765.0, fund=1235.0)
         self.app.run()
         self.assertIn("fully funded", self.visible_text())
         self.assertFalse(any("transfer" in button.label.lower() for button in self.app.button))
@@ -36,7 +36,7 @@ class AppFundingTests(DemoAppCase):
         self.click("Create my Trip Fund")
         self.set_deadline(date.today())
         with patch("bank.transfer", side_effect=RuntimeError("secret-sentinel")):
-            self.click("Transfer today ($1,057.00)")
+            self.click("Transfer today ($1,235.00)")
         self.assertIn("Could not confirm", self.visible_text())
         self.assertNotIn("secret-sentinel", self.visible_text())
         self.assertEqual(list(bank._DEMO.values()), [{"checking": 3000.0, "fund": 0.0}])
@@ -47,9 +47,10 @@ class AppFundingTests(DemoAppCase):
              patch("bank.get_balance", side_effect=lambda account, demo: 3000.0 if account == "checking" else 0.0), \
              patch("bank.transfer", side_effect=bank.BankError("secret-sentinel")) as transfer:
             self.app.toggle[0].set_value(False).run()
+            self.click("Search prices")
             self.click("Create my Trip Fund")
             self.set_deadline(date.today())
-            self.click("Transfer today ($1,057.00)")
+            self.click("Transfer today ($1,235.00)")
             self.app.run()
             self.assertIn("Further transfers are paused", self.visible_text())
             self.assertNotIn("secret-sentinel", self.visible_text())

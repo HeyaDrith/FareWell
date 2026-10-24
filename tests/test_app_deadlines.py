@@ -20,7 +20,7 @@ class AppDeadlineTests(DemoAppCase):
         transfer = next(button for button in self.app.button if "transfer" in button.label.lower())
         transfer.click().run()
         self.assertEqual(len(self.app.exception), 0)
-        self.assertEqual(list(bank._DEMO.values()), [{"checking": 2735.75, "fund": 264.25}])
+        self.assertEqual(list(bank._DEMO.values()), [{"checking": 2691.25, "fund": 308.75}])
 
     def test_deadline_after_departure_blocks_funding(self):
         departure = next(widget.value for widget in self.app.date_input if widget.label == "Depart")
@@ -34,9 +34,9 @@ class AppDeadlineTests(DemoAppCase):
     def test_today_labels_and_transfers_the_full_remaining_amount(self):
         self.click("Create my Trip Fund")
         self.set_deadline(date.today())
-        self.assertTrue(any("$1,057.00 today" in text.value for text in self.app.markdown))
-        self.click("Transfer today ($1,057.00)")
-        self.assertEqual(list(bank._DEMO.values()), [{"checking": 1943.0, "fund": 1057.0}])
+        self.assertTrue(any("$1,235.00 today" in text.value for text in self.app.markdown))
+        self.click("Transfer today ($1,235.00)")
+        self.assertEqual(list(bank._DEMO.values()), [{"checking": 1765.0, "fund": 1235.0}])
         self.assertTrue(any("fully funded" in success.value for success in self.app.success))
 
 
