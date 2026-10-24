@@ -9,13 +9,14 @@ import streamlit as st
 from dotenv import load_dotenv
 
 import bank
+import draft_ui
 import planner
 import travel
 
 load_dotenv()
 # On Streamlit Community Cloud, keys live in st.secrets instead of .env.
 try:
-    for k in ("SERPAPI_KEY", "NESSIE_API_KEY"):
+    for k in ("SERPAPI_KEY", "NESSIE_API_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"):
         if k in st.secrets:
             os.environ.setdefault(k, st.secrets[k])
 except Exception:
@@ -25,11 +26,18 @@ st.set_page_config(page_title="Trip Saver", page_icon="✈️")
 st.title("✈️ Trip Saver")
 st.caption("Tell us your budget and destination. We'll find the trip that fits and track what you save.")
 
-# Separate switches, so a Nessie key works without a SerpApi key (and vice versa).
-demo_search = st.sidebar.toggle("Sample travel prices (no SerpApi calls)", value=not os.getenv("SERPAPI_KEY"))
-demo_bank = st.sidebar.toggle("Demo bank (no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"))
+# Separate switches, so each API key works on its own.
+demo_search = st.sidebar.toggle("Sample travel prices (no SerpApi calls)", value=not os.getenv("SERPAPI_KEY"),
+                                key="demo_search")
+demo_bank = st.sidebar.toggle("Demo bank (no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"),
+                              key="demo_bank")
+demo_ai = st.sidebar.toggle("Demo AI drafts (no Gemini calls)", value=not os.getenv("GEMINI_API_KEY"),
+                            key="demo_ai")
 bank_demo = demo_bank or not os.getenv("NESSIE_API_KEY")
 ss = st.session_state
+
+# Optional: turn a group chat or screenshot into reviewed trip details (Gemini).
+draft_ui.render_draft_panel(demo_ai)
 
 
 def money(amount: float, cents: bool = False) -> str:
@@ -55,13 +63,20 @@ def run_bank(fn, *args):
 
 # ---- 1. Trip details ----
 st.header("1. Your trip")
-budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, value=1500, step=50)
+# Keyed widgets with session defaults, so an applied Gemini draft can fill them in.
+for key, default in {
+    "trip_budget": 1500, "trip_origin": "AUS", "trip_destination": "CUN",
+    "trip_city": "hotels in Cancun", "trip_depart": date.today() + timedelta(days=90),
+    "trip_return": date.today() + timedelta(days=97),
+}.items():
+    ss.setdefault(key, default)
+budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
 c1, c2 = st.columns(2)
-origin = c1.text_input("From (airport code)", "AUS").upper()
-dest = c2.text_input("To (airport code)", "CUN").upper()
-depart = c1.date_input("Depart", date.today() + timedelta(days=90))
-ret = c2.date_input("Return", date.today() + timedelta(days=97))
-city = st.text_input("Hotel search", "hotels in Cancun")
+origin = (c1.text_input("From (airport code)", key="trip_origin") or "").upper()
+dest = (c2.text_input("To (airport code)", key="trip_destination") or "").upper()
+depart = c1.date_input("Depart", value=None, key="trip_depart")
+ret = c2.date_input("Return", value=None, key="trip_return")
+city = st.text_input("Hotel search", key="trip_city") or ""
 
 date_error = None
 if depart is None:
@@ -77,6 +92,10 @@ start = st.button("Start planning", type="primary", disabled=bool(date_error))
 if date_error:
     st.warning(date_error)
     st.stop()
+
+search_fields = {"trip_origin": origin, "trip_destination": dest, "trip_city": city,
+                 "trip_depart": depart, "trip_return": ret}
+draft_ui.render_planning_notes(search_fields)
 
 details = (float(budget), origin, dest, depart, ret, city, demo_search, bank_demo,
            bool(os.getenv("SERPAPI_KEY")))
@@ -126,6 +145,8 @@ m4.metric("Saved", f"${summary['saved']:,.0f}", help="Saved vs. typical prices (
 st.progress(min(1.0, summary["spent"] / summary["budget"]) if summary["budget"] else 0.0)
 if summary["over_budget"]:
     st.error(f"You're {money(-remaining)} over budget. Remove something or pick a cheaper option.")
+if summary["picks"]:
+    draft_ui.render_planning_notes(search_fields, summary["final_total"])
 
 
 def fit_label(price: float) -> str:
