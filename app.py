@@ -1,8 +1,7 @@
-"""Trip Saver: plan a trip with live prices and make savings contributions.
+"""Trip Saver: type a budget and destination, pick the options that fit, and see the savings.
 
 Run:  streamlit run app.py
 """
-import math
 import os
 from datetime import date, timedelta
 
@@ -24,12 +23,39 @@ except Exception:
 
 st.set_page_config(page_title="Trip Saver", page_icon="✈️")
 st.title("✈️ Trip Saver")
-st.caption("Find a trip, plan your weekly savings, and contribute to your Trip Fund.")
+st.caption("Tell us your budget and destination. We'll find the trip that fits and track what you save.")
 
-demo = st.sidebar.toggle("Demo mode (cached data, no API calls)", value=not os.getenv("SERPAPI_KEY"))
+# Separate switches, so a Nessie key works without a SerpApi key (and vice versa).
+demo_search = st.sidebar.toggle("Sample travel prices (no SerpApi calls)", value=not os.getenv("SERPAPI_KEY"))
+demo_bank = st.sidebar.toggle("Demo bank (no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"))
+bank_demo = demo_bank or not os.getenv("NESSIE_API_KEY")
+ss = st.session_state
 
-# ---- 1. Search ----
-st.header("1. Plan your trip")
+
+def money(amount: float, cents: bool = False) -> str:
+    """Dollar text for markdown. "$" is escaped so Streamlit doesn't treat pairs as math."""
+    return f"\\${amount:,.2f}" if cents else f"\\${amount:,.0f}"
+
+
+def esc(text: str) -> str:
+    """Escape "$" in user-typed text for markdown."""
+    return str(text).replace("$", "\\$")
+
+
+def run_bank(fn, *args):
+    """Call the bank; show a safe message instead of crashing (never raw exception text)."""
+    try:
+        return fn(*args)
+    except (ValueError, bank.BankError) as error:  # both carry user-safe messages
+        st.error(str(error))
+    except Exception:
+        st.error("The banking service didn't respond. Try again in a moment.")
+    return None
+
+
+# ---- 1. Trip details ----
+st.header("1. Your trip")
+budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, value=1500, step=50)
 c1, c2 = st.columns(2)
 origin = c1.text_input("From (airport code)", "AUS").upper()
 dest = c2.text_input("To (airport code)", "CUN").upper()
@@ -39,124 +65,132 @@ city = st.text_input("Hotel search", "hotels in Cancun")
 
 date_error = None
 if depart is None:
-    date_error = "Choose a departure date before searching or funding your trip."
+    date_error = "Choose a departure date."
 elif ret is None:
-    date_error = "Choose a return date before searching or funding your trip."
+    date_error = "Choose a return date."
 elif depart < date.today():
     date_error = "Departure must be today or later."
 elif ret <= depart:
     date_error = "Return must be after departure."
 
-search_clicked = st.button("Search prices", type="primary", disabled=bool(date_error))
+start = st.button("Start planning", type="primary", disabled=bool(date_error))
 if date_error:
     st.warning(date_error)
     st.stop()
 
-search_details = (origin, dest, depart, ret, city, demo, bool(os.getenv("SERPAPI_KEY")))
-if search_clicked:
-    cached_prices = demo or not os.getenv("SERPAPI_KEY")
-    search_failed = False
-    with st.spinner("Searching..."):
-        try:
-            new_flights = travel.search_flights(origin, dest, str(depart), str(ret), demo)
-            new_hotels = travel.search_hotels(city, str(depart), str(ret), demo)
-        except Exception:  # Never display exceptions that may include API credentials.
-            search_failed = cached_prices = True
-            new_flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
-            new_hotels = travel.search_hotels(city, str(depart), str(ret), True)
-    # remember last price for the trend message
-    same_trip = st.session_state.get("search_details") == search_details
-    same_source = st.session_state.get("cached_prices") == cached_prices
-    st.session_state.prev_price = st.session_state.get("last_price") if same_trip and same_source else None
-    st.session_state.update(flights=new_flights, hotels=new_hotels, search_details=search_details,
-                            cached_prices=cached_prices, search_failed=search_failed)
+details = (float(budget), origin, dest, depart, ret, city, demo_search, bank_demo,
+           bool(os.getenv("SERPAPI_KEY")))
+if start:
+    trip = run_bank(bank.create_trip, budget, bank_demo)
+    if trip:
+        cached = demo_search or not os.getenv("SERPAPI_KEY")
+        failed = False
+        with st.spinner("Searching flights and hotels..."):
+            try:
+                flights = travel.search_flights(origin, dest, str(depart), str(ret), demo_search)
+                hotels = travel.search_hotels(city, str(depart), str(ret), demo_search)
+            except Exception:  # never show the exception: it may contain an API key
+                failed = cached = True
+                flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
+                hotels = travel.search_hotels(city, str(depart), str(ret), True)
+        ss.update(trip=trip, flights=flights, hotels=hotels, details=details,
+                  cached_prices=cached, search_failed=failed)
 
-if "search_details" in st.session_state:
-    if st.session_state.search_details != search_details:
-        st.info("Trip details changed. Search prices again before funding this trip.")
-        st.stop()
-    if st.session_state.search_failed:
-        st.warning("Live search was unavailable. Showing sample prices, not live quotes.")
-    elif st.session_state.cached_prices:
-        st.caption("Sample prices for the demo; these are not live travel quotes.")
+if "trip" not in ss:
+    st.stop()
+if ss.details != details:
+    st.info("Trip details changed. Click **Start planning** to search again with a fresh budget.")
+    st.stop()
+if ss.search_failed:
+    st.warning("Live search was unavailable. Showing sample prices, not live quotes.")
+elif ss.cached_prices:
+    st.caption("Sample prices for the demo; these are not live travel quotes.")
 
-flights = st.session_state.get("flights")
-hotels = st.session_state.get("hotels")
+trip = ss.trip
+flights, hotels = ss.flights, ss.hotels
 
-if "search_details" in st.session_state and not (flights and hotels):
+# ---- 2. Budget tracker (Nessie) ----
+summary = run_bank(bank.get_summary, trip)
+if summary is None:
+    st.stop()
+remaining = summary["remaining"]
+
+st.header("2. Your budget")
+st.caption("Spending is tracked in simulated demo money." if trip["demo"]
+           else "Spending is tracked in the Nessie sandbox (whole dollars).")
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Budget", f"${summary['budget']:,.0f}")
+m2.metric("Spent", f"${summary['spent']:,.0f}")
+m3.metric("Remaining", f"${remaining:,.0f}")
+m4.metric("Saved", f"${summary['saved']:,.0f}", help="Saved vs. typical prices (Trip Savings account)")
+st.progress(min(1.0, summary["spent"] / summary["budget"]) if summary["budget"] else 0.0)
+if summary["over_budget"]:
+    st.error(f"You're {money(-remaining)} over budget. Remove something or pick a cheaper option.")
+
+
+def fit_label(price: float) -> str:
+    return "✅ fits" if price <= remaining else f"⚠️ {money(price - remaining)} over"
+
+
+def save_label(saved: float) -> str:
+    return f" · 💰 saves {money(saved)}" if saved >= 1 else ""
+
+
+def add(category: str, description: str, amount: float, saved: float = 0.0):
+    if run_bank(bank.record_pick, trip, category, description, amount, saved):
+        st.rerun()
+
+
+# ---- 3. Options ----
+st.header("3. Pick your options")
+if not (flights and hotels):
     st.warning("No matching flights or hotels with complete prices. Try different dates or a different destination.")
 
-if flights and hotels:
-    f_pick = st.selectbox("Flight", range(len(flights)),
-                          format_func=lambda i: f"{flights[i]['airline']} - ${flights[i]['price']:.0f}")
-    h_pick = st.selectbox("Hotel", range(len(hotels)),
-                          format_func=lambda i: f"{hotels[i]['name']} - ${hotels[i]['total']:.0f} total "
-                                                f"({hotels[i]['rating']}★)")
-    activities = st.number_input("Activities / food budget ($)", 0, 5000, 200, step=50)
-    budget = planner.trip_budget(flights[f_pick]["price"], hotels[h_pick]["total"], activities)
-    st.session_state.last_price = budget
-    st.metric("Trip budget", f"${budget:,.0f}")
-    st.info(planner.price_trend(st.session_state.get("prev_price"), budget))
+if flights:
+    typical = planner.typical_price([f["price"] for f in flights])
+    st.subheader("Flights")
+    st.caption(f"Typical round-trip price: {money(typical)}")
+    for i, f in enumerate(flights[:6]):
+        saved = planner.savings_vs_typical(f["price"], typical)
+        a, b, c = st.columns([4, 3, 1])
+        a.markdown(f"**{f['airline']}** · {f['duration_min'] // 60}h {f['duration_min'] % 60}m")
+        b.markdown(f"{money(f['price'])} · {fit_label(f['price'])}{save_label(saved)}")
+        if c.button("Add", key=f"flight-{i}"):
+            add("Flight", f"{f['airline']} flight {origin}→{dest}", f["price"], saved)
 
-    # ---- 2. Fund ----
-    st.header("2. Fund it")
-    deadline = st.date_input("Save by", date.today() + timedelta(days=60), key="deadline")
+if hotels:
+    typical = planner.typical_price([h["total"] for h in hotels])
+    st.subheader("Hotels")
+    st.caption(f"Typical stay: {money(typical)} total")
+    for i, h in enumerate(hotels[:6]):
+        saved = planner.savings_vs_typical(h["total"], typical)
+        a, b, c = st.columns([4, 3, 1])
+        a.markdown(f"**{h['name']}** · {h['rating']}★ · {money(h['per_night'])}/night")
+        b.markdown(f"{money(h['total'])} total · {fit_label(h['total'])}{save_label(saved)}")
+        if c.button("Add", key=f"hotel-{i}"):
+            add("Hotel", h["name"], h["total"], saved)
 
-    try:
-        planner.validate_deadline(deadline, departure=depart)
-    except ValueError as error:
-        st.warning(str(error))
-        st.stop()
+st.subheader("Food & activities")
+with st.form("extra", clear_on_submit=True):
+    a, b, c = st.columns([2, 4, 2])
+    category = a.selectbox("Type", ["Food", "Activity", "Other"])
+    description = b.text_input("What", placeholder="e.g. Dinner at Taqueria El Fogón")
+    amount = c.number_input("Cost ($)", min_value=1.0, value=40.0, step=5.0)
+    if st.form_submit_button("Add to trip"):
+        add(category, description or category, amount)
 
-    bank_demo = demo or not os.getenv("NESSIE_API_KEY")
-    wallets = st.session_state.setdefault("wallets", {})
-    wallet = wallets.setdefault("demo" if bank_demo else "nessie", {})
-    st.caption("Funding uses simulated demo money." if bank_demo else "Funding uses the Nessie sandbox.")
-    if "accounts" not in wallet:
-        if st.button("Create my Trip Fund"):
-            try:
-                wallet["accounts"] = bank.setup_accounts(bank_demo)
-            except Exception:
-                st.error("Could not create the Trip Fund. Check the banking service before trying again.")
-            else:
-                st.rerun()
-    else:
-        acc = wallet["accounts"]
-        try:
-            saved = bank.get_balance(acc["fund_id"], bank_demo)
-            checking = bank.get_balance(acc["checking_id"], bank_demo)
-        except Exception:
-            st.error("Could not load account balances. Funding is paused until balances are available.")
-            st.stop()
-        weekly = planner.weekly_amount(budget, saved, deadline)
-        if not bank_demo:
-            weekly = float(math.ceil(weekly))  # Nessie only records whole dollars
-
-        # Escape "$" so Streamlit does not treat pairs of them as math formatting.
-        st.progress(min(1.0, saved / budget) if budget else 0.0,
-                    text=f"\\${saved:,.0f} of \\${budget:,.0f} saved")
-        contribution_timing = "today" if deadline == date.today() else "per week"
-        st.write(f"**Plan:** move **\\${weekly:,.2f} {contribution_timing}** from checking "
-                 f"(balance \\${checking:,.2f}).")
-
-        if weekly == 0:
-            st.success("🎉 Trip fully funded. Time to book!")
-        elif wallet.get("transfer_pending"):
-            st.warning("A transfer was submitted or could not be confirmed. Check its status in Nessie before sending more money. Further transfers are paused in this session.")
-        elif weekly > checking:
-            st.warning("Not enough money in checking for this contribution. Add funds or revise your plan.")
-        else:
-            # A click submits one contribution; it does not advance the date.
-            transfer_label = "Transfer today" if deadline == date.today() else "Run this week's transfer"
-            if st.button(f"{transfer_label} (${weekly:,.2f})"):
-                wallet["transfer_pending"] = not bank_demo
-                try:
-                    bank.transfer(acc["checking_id"], acc["fund_id"], weekly, bank_demo)
-                except ValueError:
-                    wallet["transfer_pending"] = False
-                    st.error("The transfer was not sent. Check the amount and available checking funds.")
-                except Exception:
-                    st.error("Could not confirm the transfer. Check its status before trying again.")
-                else:
-                    wallet["transfer_pending"] = False  # confirmed; balances now reflect it
-                    st.rerun()
+# ---- 4. Trip summary ----
+st.header("4. Your trip")
+if not summary["picks"]:
+    st.caption("Nothing added yet. Pick a flight, hotel or activity above.")
+for p in summary["picks"]:
+    a, b, c = st.columns([5, 3, 1])
+    a.markdown(f"{p['category']}: {esc(p['description'])}")
+    b.markdown(f"–{money(p['amount'])}" + (f" · saved {money(p['saved'])}" if p["saved"] else ""))
+    if c.button("✕", key=f"rm-{p['id']}", help="Remove"):
+        run_bank(bank.remove_pick, trip, p["id"])
+        st.rerun()
+if summary["picks"]:
+    st.success(f"**Final trip cost: {money(summary['final_total'])}** · "
+               f"saved {money(summary['saved'])} vs. typical prices · "
+               f"{money(remaining)} of your budget left")

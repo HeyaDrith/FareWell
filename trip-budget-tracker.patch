@@ -1,0 +1,505 @@
+diff --git a/app.py b/app.py
+index b906bd4..78f27e2 100644
+--- a/app.py
++++ b/app.py
+@@ -1,4 +1,4 @@
+-"""Trip Saver: plan a trip with live prices and fund it automatically.
++"""Trip Saver: type a budget, pick a destination, and build the trip that fits.
+ 
+ Run:  streamlit run app.py
+ """
+@@ -23,12 +23,27 @@ except Exception:
+ 
+ st.set_page_config(page_title="Trip Saver", page_icon="✈️")
+ st.title("✈️ Trip Saver")
+-st.caption("Find a trip, then let your Trip Fund save for it automatically.")
++st.caption("Tell us your budget and destination. We'll find the trip that fits.")
+ 
+-demo = st.sidebar.toggle("Demo mode (cached data, no API calls)", value=not os.getenv("SERPAPI_KEY"))
++# Search and bank have separate demo switches, so a Nessie key works without a SerpApi key.
++demo_search = st.sidebar.toggle("Demo search (cached flights/hotels)", value=not os.getenv("SERPAPI_KEY"))
++demo_bank = st.sidebar.toggle("Demo bank (in-memory, no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"))
+ 
+-# ---- 1. Search ----
+-st.header("1. Plan your trip")
++ss = st.session_state
++
++
++def run_bank(fn, *args, **kwargs):
++    """Call a bank function, showing a friendly error instead of crashing the page."""
++    try:
++        return fn(*args, **kwargs)
++    except bank.BankError as e:
++        st.error(str(e))
++        return None
++
++
++# ---- 1. Trip details ----
++st.header("1. Your trip")
++budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, value=1500, step=50)
+ c1, c2 = st.columns(2)
+ origin = c1.text_input("From (airport code)", "AUS").upper()
+ dest = c2.text_input("To (airport code)", "CUN").upper()
+@@ -36,55 +51,108 @@ depart = c1.date_input("Depart", date.today() + timedelta(days=90))
+ ret = c2.date_input("Return", date.today() + timedelta(days=97))
+ city = st.text_input("Hotel search", "hotels in Cancun")
+ 
+-if st.button("Search prices", type="primary"):
+-    with st.spinner("Searching..."):
+-        try:
+-            st.session_state.flights = travel.search_flights(origin, dest, str(depart), str(ret), demo)
+-            st.session_state.hotels = travel.search_hotels(city, str(depart), str(ret), demo)
+-        except Exception as e:  # keep the demo alive if an API hiccups
+-            st.warning(f"Live search failed ({e}). Showing cached demo data.")
+-            st.session_state.flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
+-            st.session_state.hotels = travel.search_hotels(city, str(depart), str(ret), True)
+-    # remember last price for the trend message
+-    st.session_state.prev_price = st.session_state.get("last_price")
+-
+-flights = st.session_state.get("flights")
+-hotels = st.session_state.get("hotels")
+-
+-if flights and hotels:
+-    f_pick = st.selectbox("Flight", range(len(flights)),
+-                          format_func=lambda i: f"{flights[i]['airline']} - ${flights[i]['price']:.0f}")
+-    h_pick = st.selectbox("Hotel", range(len(hotels)),
+-                          format_func=lambda i: f"{hotels[i]['name']} - ${hotels[i]['total']:.0f} total "
+-                                                f"({hotels[i]['rating']}★)")
+-    activities = st.number_input("Activities / food budget ($)", 0, 5000, 200, step=50)
+-    budget = planner.trip_budget(flights[f_pick]["price"], hotels[h_pick]["total"], activities)
+-    st.session_state.last_price = budget
+-    st.metric("Trip budget", f"${budget:,.0f}")
+-    st.info(planner.price_trend(st.session_state.get("prev_price"), budget))
+-
+-    # ---- 2. Fund ----
+-    st.header("2. Fund it")
+-    deadline = st.date_input("Save by", date.today() + timedelta(days=60), key="deadline")
+-
+-    if "accounts" not in st.session_state:
+-        if st.button("Create my Trip Fund"):
+-            st.session_state.accounts = bank.setup_accounts(demo)
+-            st.rerun()
++if st.button("Start planning", type="primary"):
++    if ret <= depart:
++        st.error("Return date must be after the depart date.")
+     else:
+-        acc = st.session_state.accounts
+-        saved = bank.get_balance(acc["fund_id"], demo)
+-        weekly = planner.weekly_amount(budget, saved, deadline)
+-
+-        st.progress(min(1.0, saved / budget) if budget else 0.0,
+-                    text=f"${saved:,.0f} of ${budget:,.0f} saved")
+-        st.write(f"**Plan:** move **${weekly:,.2f}/week** from checking "
+-                 f"(balance ${bank.get_balance(acc['checking_id'], demo):,.0f}).")
+-
+-        # In the demo, one click = one week passing.
+-        if st.button(f"Run this week's transfer (${weekly:,.2f})"):
+-            bank.transfer(acc["checking_id"], acc["fund_id"], weekly, demo)
+-            st.rerun()
+-
+-        if saved >= budget:
+-            st.success("🎉 Trip fully funded. Time to book!")
++        trip = run_bank(bank.create_trip, budget, demo=demo_bank)
++        if trip:
++            ss.trip = trip
++            with st.spinner("Searching flights and hotels..."):
++                try:
++                    ss.flights = travel.search_flights(origin, dest, str(depart), str(ret), demo_search)
++                    ss.hotels = travel.search_hotels(city, str(depart), str(ret), demo_search)
++                except Exception as e:  # keep the demo alive if SerpApi hiccups
++                    st.warning(f"Live search failed ({e}). Showing cached demo data.")
++                    ss.flights = travel.search_flights(origin, dest, str(depart), str(ret), True)
++                    ss.hotels = travel.search_hotels(city, str(depart), str(ret), True)
++
++if "trip" not in ss:
++    st.stop()
++
++trip = ss.trip
++if trip["budget"] != float(budget):
++    st.info(f"Your tracker is still using ${trip['budget']:,.0f}. Click **Start planning** to switch to "
++            f"${budget:,.0f} (this starts a fresh trip).")
++
++# ---- 2. Budget tracker (Nessie) ----
++summary = run_bank(bank.get_summary, trip)
++if summary is None:
++    st.stop()
++remaining = summary["remaining"]
++
++st.header("2. Your budget")
++m1, m2, m3, m4 = st.columns(4)
++m1.metric("Budget", f"${summary['budget']:,.0f}")
++m2.metric("Spent", f"${summary['spent']:,.0f}")
++m3.metric("Remaining", f"${remaining:,.0f}")
++m4.metric("Saved", f"${summary['saved']:,.0f}", help="Money saved vs. typical prices (Nessie Trip Savings)")
++st.progress(min(1.0, summary["spent"] / summary["budget"]) if summary["budget"] else 0.0)
++if summary["over_budget"]:
++    st.error(f"You're ${-remaining:,.0f} over budget. Remove something or pick a cheaper option.")
++
++
++def fit_label(price: float) -> str:
++    return "✅ fits" if price <= remaining else f"⚠️ ${price - remaining:,.0f} over"
++
++
++def save_label(saved: float) -> str:
++    return f" · 💰 saves ${saved:,.0f}" if saved > 0 else ""
++
++
++def add(category: str, description: str, amount: float, saved: float = 0.0):
++    if run_bank(bank.record_pick, trip, category, description, amount, saved):
++        st.rerun()
++
++
++# ---- 3. Options ----
++st.header("3. Pick your options")
++
++flights = ss.get("flights", [])
++typical_flight = planner.typical_price([f["price"] for f in flights])
++st.subheader("Flights")
++st.caption(f"Typical price: ${typical_flight:,.0f}")
++for i, f in enumerate(flights[:6]):
++    saved = planner.savings_vs_typical(f["price"], typical_flight)
++    a, b, c = st.columns([4, 3, 1])
++    a.write(f"**{f['airline']}** · {f['duration_min'] // 60}h {f['duration_min'] % 60}m")
++    b.write(f"${f['price']:,.0f} · {fit_label(f['price'])}{save_label(saved)}")
++    if c.button("Add", key=f"flight-{i}"):
++        add("Flight", f"{f['airline']} flight {origin}→{dest}", f["price"], saved)
++
++hotels = ss.get("hotels", [])
++typical_hotel = planner.typical_price([h["total"] for h in hotels])
++st.subheader("Hotels")
++st.caption(f"Typical price: ${typical_hotel:,.0f} total")
++for i, h in enumerate(hotels[:6]):
++    saved = planner.savings_vs_typical(h["total"], typical_hotel)
++    a, b, c = st.columns([4, 3, 1])
++    a.write(f"**{h['name']}** · {h['rating']}★ · ${h['per_night']:,.0f}/night")
++    b.write(f"${h['total']:,.0f} total · {fit_label(h['total'])}{save_label(saved)}")
++    if c.button("Add", key=f"hotel-{i}"):
++        add("Hotel", h["name"], h["total"], saved)
++
++st.subheader("Food & activities")
++with st.form("extra", clear_on_submit=True):
++    a, b, c = st.columns([2, 4, 2])
++    category = a.selectbox("Type", ["Food", "Activity", "Other"])
++    description = b.text_input("What", placeholder="e.g. Dinner at Taqueria El Fogón")
++    amount = c.number_input("Cost ($)", min_value=0.0, value=40.0, step=5.0)
++    if st.form_submit_button("Add to trip"):
++        add(category, description or category, amount)
++
++# ---- 4. Trip summary ----
++st.header("4. Your trip")
++if not summary["picks"]:
++    st.caption("Nothing added yet. Pick a flight, hotel or activity above.")
++for p in summary["picks"]:
++    a, b, c = st.columns([5, 3, 1])
++    a.write(f"{p['category']}: {p['description']}")
++    b.write(f"–${p['amount']:,.2f}" + (f" · saved ${p['saved']:,.0f}" if p["saved"] else ""))
++    if c.button("✕", key=f"rm-{p['id']}", help="Remove"):
++        run_bank(bank.remove_pick, trip, p["id"])
++        st.rerun()
++if summary["picks"]:
++    st.success(f"**Final trip cost: ${summary['final_total']:,.2f}** · "
++               f"saved ${summary['saved']:,.2f} vs. typical prices · "
++               f"${remaining:,.2f} of your budget left")
+diff --git a/bank.py b/bank.py
+index d8d89ce..0ee7aa3 100644
+--- a/bank.py
++++ b/bank.py
+@@ -1,79 +1,228 @@
+-"""Nessie (Capital One hackathon API) client for the Trip Fund.
+-
+-Nessie is a sandbox: accounts and money are fake. Docs: http://api.nessieisreal.com
+-In demo mode (or with no key) everything runs against an in-memory fake so the app still works.
++"""Nessie (Capital One hackathon API) client: trip budget + savings tracker.
++
++How it works:
++  1. The user types a trip budget (e.g. $1,500).
++  2. create_trip() opens two fake Nessie accounts:
++       - "Trip Budget" (checking) holding the budget
++       - "Trip Savings" (savings) starting at $0
++  3. Every option the user picks (flight, hotel, food, activity) is a Nessie *purchase*
++     on Trip Budget. If the pick is cheaper than the typical option, the difference is
++     a Nessie *deposit* into Trip Savings, so savings show up as a real balance.
++  4. get_summary() returns budget / spent / saved / remaining / final trip total + every pick.
++
++Nessie is a sandbox: no real banks or money are involved. Docs: https://nessieisreal.com
++In demo mode (or with no NESSIE_API_KEY) everything runs against an in-memory fake.
+ """
+ import os
++import re
++import uuid
+ from datetime import date
+ 
+ import requests
+ 
+-BASE = "http://api.nessieisreal.com"
++# Same live URL as the person4/final-integration branch; HTTPS so the key never travels in clear text.
++BASE = "https://prod-api.nessieisreal.com"
+ 
+-# In-memory stand-in for demo mode.
+-_DEMO = {"checking": 3000.0, "fund": 0.0}
++CATEGORIES = ("Flight", "Hotel", "Food", "Activity", "Other")
+ 
++# Nessie purchases must point at a merchant; we create one per category and reuse it.
++_MERCHANTS: dict[str, str] = {}
+ 
+-def _key() -> str:
+-    return os.environ["NESSIE_API_KEY"]
++# Demo-mode stand-in: budget account id -> {"picks": [pick, ...]}
++_DEMO: dict[str, dict] = {}
+ 
++# Savings deposits are tagged with the purchase they belong to, e.g. "[for:abc123] Saved on ...".
++_TAG = re.compile(r"^\[for:([^\]]+)\]\s*")
+ 
+-def _use_demo(demo: bool) -> bool:
+-    return demo or not os.getenv("NESSIE_API_KEY")
+ 
++class BankError(Exception):
++    """Raised for invalid input or a failed Nessie call, with a message safe to show users."""
+ 
+-def _post(path: str, body: dict) -> dict:
+-    r = requests.post(f"{BASE}{path}", params={"key": _key()}, json=body, timeout=15)
+-    r.raise_for_status()
+-    return r.json()
+ 
++# ---------- public API ----------
+ 
+-def _get(path: str) -> dict:
+-    r = requests.get(f"{BASE}{path}", params={"key": _key()}, timeout=15)
+-    r.raise_for_status()
+-    return r.json()
++def use_demo(demo: bool = False) -> bool:
++    """True when we should use the in-memory fake instead of calling Nessie."""
++    return demo or not os.getenv("NESSIE_API_KEY")
+ 
+ 
+-def setup_accounts(demo: bool = False) -> dict:
+-    """Create a customer plus a checking account and an empty Trip Fund.
++def create_trip(budget: float, demo: bool = False) -> dict:
++    """Open the Trip Budget and Trip Savings accounts.
+ 
+-    Returns {"checking_id", "fund_id"} (placeholder ids in demo mode).
++    Returns a trip dict to keep in st.session_state:
++    {"budget": float, "budget_id": str, "savings_id": str, "demo": bool}
+     """
+-    if _use_demo(demo):
+-        _DEMO.update(checking=3000.0, fund=0.0)
+-        return {"checking_id": "demo-checking", "fund_id": "demo-fund"}
++    budget = _money(budget)
++    if use_demo(demo):
++        budget_id = f"demo-{uuid.uuid4().hex[:8]}"
++        _DEMO[budget_id] = {"picks": []}
++        return {"budget": budget, "budget_id": budget_id, "savings_id": f"{budget_id}-sav", "demo": True}
+ 
+-    customer = _post("/customers", {
++    customer = _request("POST", "/customers", {
+         "first_name": "Trip", "last_name": "Saver",
+         "address": {"street_number": "1", "street_name": "Congress Ave",
+                     "city": "Austin", "state": "TX", "zip": "78701"},
+     })["objectCreated"]
+-    cid = customer["_id"]
+-    checking = _post(f"/customers/{cid}/accounts", {
+-        "type": "Checking", "nickname": "Everyday", "rewards": 0, "balance": 3000,
++    accounts = f"/customers/{customer['_id']}/accounts"
++    # Nessie's account schema takes an integer balance; the exact budget lives in the trip dict.
++    budget_acct = _request("POST", accounts, {
++        "type": "Checking", "nickname": "Trip Budget", "rewards": 0, "balance": int(round(budget)),
+     })["objectCreated"]
+-    fund = _post(f"/customers/{cid}/accounts", {
+-        "type": "Savings", "nickname": "Trip Fund", "rewards": 0, "balance": 0,
++    savings_acct = _request("POST", accounts, {
++        "type": "Savings", "nickname": "Trip Savings", "rewards": 0, "balance": 0,
+     })["objectCreated"]
+-    return {"checking_id": checking["_id"], "fund_id": fund["_id"]}
++    return {"budget": budget, "budget_id": budget_acct["_id"],
++            "savings_id": savings_acct["_id"], "demo": False}
+ 
+ 
+-def get_balance(account_id: str, demo: bool = False) -> float:
+-    if _use_demo(demo):
+-        return _DEMO["fund"] if "fund" in account_id else _DEMO["checking"]
+-    return float(_get(f"/accounts/{account_id}")["balance"])
++def record_pick(trip: dict, category: str, description: str, amount: float,
++                saved: float = 0.0) -> dict:
++    """Record a chosen option as a purchase; deposit `saved` (if > 0) into Trip Savings.
+ 
+-
+-def transfer(from_id: str, to_id: str, amount: float, demo: bool = False) -> None:
+-    """Move `amount` from checking into the Trip Fund."""
+-    if _use_demo(demo):
+-        _DEMO["checking"] -= amount
+-        _DEMO["fund"] += amount
+-        return
+-    _post(f"/accounts/{from_id}/transfers", {
++    Returns {"id", "category", "description", "amount", "saved", "date"}.
++    """
++    amount = _money(amount)
++    saved = max(0.0, round(float(saved or 0), 2))
++    category = category if category in CATEGORIES else "Other"
++    description = (description or category).strip()[:80]
++    today = date.today().isoformat()
++
++    if trip["demo"]:
++        pick = {"id": f"demo-p-{uuid.uuid4().hex[:8]}", "category": category,
++                "description": description, "amount": amount, "saved": saved, "date": today}
++        _demo_trip(trip)["picks"].append(pick)
++        return pick
++
++    purchase = _request("POST", f"/accounts/{trip['budget_id']}/purchases", {
++        "merchant_id": _merchant_id(category),
+         "medium": "balance",
+-        "payee_id": to_id,
++        "purchase_date": today,
+         "amount": amount,
+-        "transaction_date": date.today().isoformat(),
+-        "description": "Weekly Trip Fund deposit",
+-    })
++        # Nessie purchases have no category field, so it rides in the description.
++        "description": f"[{category}] {description}",
++    })["objectCreated"]
++    pick = _normalize_purchase(purchase)
++
++    if saved > 0:
++        try:
++            _request("POST", f"/accounts/{trip['savings_id']}/deposits", {
++                "medium": "balance",
++                "transaction_date": today,
++                "amount": saved,
++                "description": f"[for:{pick['id']}] Saved on {description}"[:120],
++            })
++        except BankError:
++            # Don't leave a purchase with no matching savings record: undo it and re-raise.
++            _request("DELETE", f"/purchases/{pick['id']}")
++            raise
++    pick["saved"] = saved
++    return pick
++
++
++def remove_pick(trip: dict, pick_id: str) -> None:
++    """Undo a pick (e.g. the user switches hotels): removes the purchase and its savings deposit."""
++    if trip["demo"]:
++        t = _demo_trip(trip)
++        t["picks"] = [p for p in t["picks"] if p["id"] != pick_id]
++        return
++    for dep in _deposits(trip):
++        if dep["for"] == pick_id:
++            _request("DELETE", f"/deposits/{dep['id']}")
++    _request("DELETE", f"/purchases/{pick_id}")
++
++
++def list_picks(trip: dict) -> list[dict]:
++    """Every pick, oldest first, each with how much it saved."""
++    if trip["demo"]:
++        return [dict(p) for p in _demo_trip(trip)["picks"]]
++    raw = _request("GET", f"/accounts/{trip['budget_id']}/purchases")
++    picks = [_normalize_purchase(p) for p in raw if p.get("status") != "cancelled"]
++    saved_by_pick: dict[str, float] = {}
++    for dep in _deposits(trip):
++        saved_by_pick[dep["for"]] = saved_by_pick.get(dep["for"], 0) + dep["amount"]
++    for p in picks:
++        p["saved"] = round(saved_by_pick.get(p["id"], 0.0), 2)
++    return picks
++
++
++def get_summary(trip: dict) -> dict:
++    """{"budget", "spent", "saved", "remaining", "final_total", "over_budget", "picks"}.
++
++    Totals are computed from the purchase/deposit lists rather than Nessie's account balances,
++    because Nessie can leave new transactions "pending" without updating the balance yet.
++    """
++    picks = list_picks(trip)
++    spent = round(sum(p["amount"] for p in picks), 2)
++    saved = round(sum(p["saved"] for p in picks), 2)
++    remaining = round(trip["budget"] - spent, 2)
++    return {"budget": trip["budget"], "spent": spent, "saved": saved, "remaining": remaining,
++            "final_total": spent, "over_budget": remaining < 0, "picks": picks}
++
++
++# ---------- internals ----------
++
++def _key() -> str:
++    return os.environ["NESSIE_API_KEY"]
++
++
++def _request(method: str, path: str, body: dict | None = None):
++    try:
++        r = requests.request(method, f"{BASE}{path}", params={"key": _key()}, json=body, timeout=15,
++                             allow_redirects=False)  # never resend the key to a redirect target
++    except requests.RequestException as e:
++        # Don't include str(e): it contains the request URL, which carries the API key.
++        raise BankError(f"Could not reach Nessie ({type(e).__name__}). Check your internet "
++                        "connection and try again.") from None
++    if r.status_code >= 400:
++        raise BankError(f"Nessie {method} {path} failed ({r.status_code}): {r.text[:200]}")
++    return r.json() if r.content else {}
++
++
++def _money(amount) -> float:
++    try:
++        value = round(float(amount), 2)
++    except (TypeError, ValueError):
++        raise BankError(f"Amount must be a number, got {amount!r}")
++    if value <= 0:
++        raise BankError("Amount must be greater than $0")
++    return value
++
++
++def _merchant_id(category: str) -> str:
++    """Get (or create once) the Nessie merchant used for this category."""
++    if category not in _MERCHANTS:
++        created = _request("POST", "/merchants", {
++            "name": f"Trip Saver {category}",
++            "category": category,
++            "address": {"street_number": "1", "street_name": "Congress Ave",
++                        "city": "Austin", "state": "TX", "zip": "78701"},
++            "geocode": {"lat": 30.2672, "lng": -97.7431},
++        })["objectCreated"]
++        _MERCHANTS[category] = created["_id"]
++    return _MERCHANTS[category]
++
++
++def _demo_trip(trip: dict) -> dict:
++    if trip["budget_id"] not in _DEMO:
++        raise BankError("Trip not found. Start a new trip.")
++    return _DEMO[trip["budget_id"]]
++
++
++def _deposits(trip: dict) -> list[dict]:
++    raw = _request("GET", f"/accounts/{trip['savings_id']}/deposits")
++    out = []
++    for d in raw:
++        m = _TAG.match(d.get("description", ""))
++        if m and d.get("status") != "cancelled":
++            out.append({"id": d.get("_id", ""), "for": m.group(1), "amount": float(d.get("amount", 0))})
++    return out
++
++
++def _normalize_purchase(p: dict) -> dict:
++    desc = p.get("description", "")
++    category = "Other"
++    if desc.startswith("[") and "]" in desc:
++        tag, desc = desc[1:].split("]", 1)
++        category = tag if tag in CATEGORIES else "Other"
++    return {"id": p.get("_id", ""), "category": category, "description": desc.strip(),
++            "amount": float(p.get("amount", 0)), "saved": 0.0, "date": p.get("purchase_date", "")}
+diff --git a/planner.py b/planner.py
+index a165cb4..1a07074 100644
+--- a/planner.py
++++ b/planner.py
+@@ -29,3 +29,17 @@ def price_trend(previous: float | None, current: float) -> str:
+ 
+ def trip_budget(flight_price: float, hotel_total: float, activities: float = 0.0) -> float:
+     return round(flight_price + hotel_total + activities, 2)
++
++
++def typical_price(prices: list[float]) -> float:
++    """The median price of the search results, used as the "typical" option."""
++    values = sorted(p for p in prices if p and p > 0)
++    if not values:
++        return 0.0
++    mid = len(values) // 2
++    return round(values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2, 2)
++
++
++def savings_vs_typical(price: float, typical: float) -> float:
++    """How much cheaper than typical this option is (0 if it costs the same or more)."""
++    return round(max(0.0, typical - price), 2)

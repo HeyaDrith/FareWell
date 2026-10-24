@@ -11,11 +11,15 @@ APP = Path(__file__).resolve().parents[1] / "app.py"
 
 
 class DemoAppCase(unittest.TestCase):
+    """Starts the real app with sample prices and demo money, then clicks Start planning."""
+
     def setUp(self):
         for context in (
             patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "",
                                     "PYTHON_DOTENV_DISABLED": "1"}),
             patch.dict(bank._DEMO, {}, clear=True),
+            patch.dict(bank._TRIPS, {}, clear=True),
+            patch.dict(bank._MERCHANTS, {}, clear=True),
         ):
             context.start()
             self.addCleanup(context.stop)
@@ -25,25 +29,34 @@ class DemoAppCase(unittest.TestCase):
         self.addCleanup(network.stop)
         self.addCleanup(self.requests.assert_not_called)
         self.app = AppTest.from_file(str(APP), default_timeout=15).run()
-        self.click("Search prices")
+        self.click("Start planning")
 
     def click(self, label):
         button = next(button for button in self.app.button if button.label == label)
         button.click().run()
         self.assertEqual(len(self.app.exception), 0)
 
-    def set_deadline(self, deadline):
-        self.app.date_input(key="deadline").set_value(deadline).run()
+    def add(self, key):
+        self.app.button(key=key).click().run()
         self.assertEqual(len(self.app.exception), 0)
 
-    def assert_funding_blocked(self, message):
-        self.assertTrue(any(message in warning.value for warning in self.app.warning))
-        self.assertFalse(any("transfer" in button.label.lower() or button.label == "Create my Trip Fund"
-                             for button in self.app.button))
-        for balances in bank._DEMO.values():
-            self.assertEqual(balances, {"checking": 3000.0, "fund": 0.0})
+    def add_extra(self, description, cost, category="Food"):
+        self.app.selectbox[0].set_value(category)
+        next(w for w in self.app.text_input if w.label == "What").input(description)
+        next(w for w in self.app.number_input if w.label == "Cost ($)").set_value(cost)
+        self.click("Add to trip")
+
+    def metrics(self):
+        return {m.label: m.value for m in self.app.metric}
+
+    def add_buttons(self):
+        return [b for b in self.app.button if b.label == "Add"]
 
     def visible_text(self):
         return "\n".join(str(element.value) for kind in
-                         ("warning", "error", "markdown", "info", "success")
+                         ("warning", "error", "markdown", "info", "success", "caption")
                          for element in getattr(self.app, kind))
+
+    def plain_text(self):
+        """Visible text with markdown "$" escapes removed, as a reader sees it."""
+        return self.visible_text().replace("\\$", "$")

@@ -56,3 +56,17 @@ def price_trend(previous: float | None, current: float) -> str:
 
 def trip_budget(flight_price: float, hotel_total: float, activities: float = 0.0) -> float:
     return round(flight_price + hotel_total + activities, 2)
+
+
+def typical_price(prices: list[float]) -> float:
+    """The median of the search results' prices, used as the "typical" option."""
+    values = sorted(p for p in prices if p and p > 0)
+    if not values:
+        return 0.0
+    mid = len(values) // 2
+    return round(values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2, 2)
+
+
+def savings_vs_typical(price: float, typical: float) -> float:
+    """How much cheaper than typical an option is (0 if it costs the same or more)."""
+    return round(max(0.0, typical - price), 2)
