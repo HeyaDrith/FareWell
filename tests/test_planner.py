@@ -119,3 +119,21 @@ class RecommendationTests(unittest.TestCase):
                          {"recommended": 1, "cheapest": 1, "best_quality": 1})
         self.assertEqual(planner.pick_options([], [], 500),
                          {"recommended": None, "cheapest": None, "best_quality": None})
+
+
+
+class TripInputTests(unittest.TestCase):
+    def test_airports_and_dates_are_checked_in_order(self):
+        today = date(2026, 10, 24)
+        go, back = date(2027, 1, 22), date(2027, 1, 29)
+        cases = [(("", "CUN", go, back), "flying from and to"),
+                 (("DALLAS AREA", "CUN", go, back), "3-letter code"),
+                 (("CUN", "CUN", go, back), "two different airports"),
+                 (("AUS", "CUN", None, back), "departure date"),
+                 (("AUS", "CUN", go, None), "return date"),
+                 (("AUS", "CUN", date(2026, 10, 1), back), "today or later"),
+                 (("AUS", "CUN", go, go), "Return must be after")]
+        for args, message in cases:
+            with self.subTest(args=args):
+                self.assertIn(message, planner.trip_input_error(*args, today=today))
+        self.assertIsNone(planner.trip_input_error("AUS", "CUN", go, back, today=today))

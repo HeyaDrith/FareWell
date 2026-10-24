@@ -5,6 +5,7 @@ In demo mode (or if no key is set) they return cached data from demo_data/.
 """
 import base64
 import json
+import unicodedata
 import math
 import os
 from datetime import date
@@ -25,6 +26,29 @@ def _load_demo(name: str):
 def _airports() -> dict:
     # IATA code -> [lat, lon, city]; large/medium airports from OurAirports (public domain).
     return _load_demo("airports.json")
+
+
+def airport_codes() -> list[str]:
+    """Every known IATA airport code, A-Z (for the searchable airport dropdowns)."""
+    return sorted(_airports())
+
+
+def airport_label(code: str) -> str:
+    """Dropdown label like "CUN · Cancún (Cancun)" so typing a code, a city, or the city without
+    accents all match. Unknown codes are shown as typed."""
+    code = (code or "").strip().upper()
+    found = _airports().get(code)
+    city = str(found[2]) if found and len(found) > 2 and found[2] else ""
+    if not city:
+        return code
+    plain = unicodedata.normalize("NFKD", city).encode("ascii", "ignore").decode()
+    return f"{code} · {city}" + (f" ({plain})" if plain and plain != city else "")
+
+
+def airport_city(code: str) -> str:
+    """City name for an IATA code ("" if unknown)."""
+    found = _airports().get((code or "").strip().upper())
+    return str(found[2]) if found and len(found) > 2 and found[2] else ""
 
 
 def airport_location(code: str) -> dict | None:

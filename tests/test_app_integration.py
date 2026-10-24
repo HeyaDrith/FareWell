@@ -283,6 +283,32 @@ class AppTripTests(DemoAppCase):
         self.assertTrue(lock.disabled)
         self.assertIn("Get under budget first", self.visible_text())
 
+    def test_airport_dropdowns_search_by_code_or_city(self):
+        origin = self.app.selectbox(key="trip_origin")
+        self.assertEqual(origin.value, "AUS")
+        self.assertIn("CUN · Cancún (Cancun)", origin.options)  # accents-free name matches "cancun"
+        self.assertIn("DFW · Dallas-Fort Worth", origin.options)
+        self.assertGreater(len(origin.options), 4000)
+
+    def test_picking_a_destination_fills_hotel_search_and_requires_new_plan(self):
+        self.app.selectbox(key="trip_destination").select("SJU").run()
+        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in San Juan")
+        self.assertIn("Trip details changed", self.visible_text())
+
+    def test_typed_airport_code_is_uppercased_and_empty_stays_empty(self):
+        # Typed text arrives as the widget value (accept_new_options); codes are uppercased.
+        self.app.session_state["trip_origin"] = "dfw"
+        self.app.run()
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "DFW")
+        self.app.session_state["trip_origin"] = None
+        self.app.run()
+        self.assertIsNone(self.app.selectbox(key="trip_origin").value)  # not the first airport in the list
+        self.assertIn("flying from and to", self.visible_text())
+        self.assertTrue(next(b for b in self.app.button if b.label == "Start planning").disabled)
+        self.app.session_state["trip_origin"] = "CUN"
+        self.app.run()
+        self.assertIn("two different airports", self.visible_text())
+
 
 if __name__ == "__main__":
     unittest.main()
