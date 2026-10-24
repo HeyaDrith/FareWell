@@ -1,8 +1,16 @@
 # ✈️ Trip Saver
 
-Plan a trip with live flight and hotel prices (SerpApi), calculate weekly savings, and
-submit contributions to a Trip Fund (Capital One Nessie). Built at HackTX 26.
-Transfers are triggered by a button; a background scheduler is not implemented.
+Type a budget and destination, pick the flights, hotels, food and activities that fit, and
+see how much you save. Prices come from SerpApi; every pick is tracked in Capital One's
+Nessie sandbox. Built at HackTX 26.
+
+## How it works
+1. Enter a **budget**, airports, dates and a hotel search, then click **Start planning**.
+2. Flights and hotels show the **typical price** (median of the results), whether each option
+   **fits** what's left of the budget, and how much it **saves** vs. typical.
+3. Each pick becomes a Nessie **purchase** on a "Trip Budget" account. Money saved vs. typical
+   is a Nessie **deposit** into a "Trip Savings" account. Food and activities are added by hand.
+4. The page shows Budget / Spent / Remaining / Saved and the **final trip cost**. ✕ removes a pick.
 
 ## Run it
 ```bash
@@ -33,48 +41,49 @@ and reject external HTTP requests. To run just the standard-library calculation 
 python -m unittest discover -s tests -p test_planner.py -v
 ```
 
-## Savings deadline contract
-- Existing planner function names, arguments, and dollar-valued float results are preserved.
-- `weeks_until()` and `weekly_amount()` raise `ValueError` for a missing or expired deadline.
-- `validate_deadline(deadline, today=None, departure=None)` also checks the departure bound
-  when supplied. The website catches its messages before showing funding controls.
-- Saving by today is valid: the full remaining amount is due today. A deadline on the
-  departure date is also allowed; a later deadline is rejected.
-- Demo weekly scheduling remains simulated with the existing transfer button.
+## Trip budget tracker (Nessie)
+- `create_trip(budget, demo=False)` returns a trip dict (keep it in `st.session_state`);
+  `record_pick(trip, category, description, amount, saved=0)`, `remove_pick(trip, pick_id)`,
+  `list_picks(trip)` and `get_summary(trip)` use it. Categories: Flight, Hotel, Food, Activity, Other.
+- Live sandbox behavior, verified with a real key on 2026-10-24: purchases and deposits need
+  `"status"`, amounts are whole dollars only, balances never update, purchases can't be deleted.
+  So costs round **up** to the dollar, savings round **down**, totals are computed from the
+  records, and removed picks are remembered in the trip dict instead of deleted.
+- Demo trips never reach Nessie; invalid amounts raise `ValueError`; service failures raise
+  `BankError` with safe text (no URL or key).
+- The weekly Trip Fund functions (`setup_accounts`, `get_balance`, `transfer`) and the deadline
+  helpers in `planner.py` are unchanged and still tested, ready for a later "save for it" step.
 
 ## Who owns what
 | File | Job |
 |---|---|
 | `app.py` | Streamlit UI |
 | `travel.py` | SerpApi flights + hotels |
-| `bank.py` | Nessie accounts + transfers |
-| `planner.py` | Savings-plan math |
+| `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers, not used by the UI) |
+| `planner.py` | Typical price / savings math (+ weekly savings math) |
 
-## Funding contract and limits
+## Trip Fund transfer contract (kept in `bank.py`, not shown in the UI yet)
 - Existing `setup_accounts(demo=False)`, `get_balance(account_id, demo=False)`,
   and `transfer(from_id, to_id, amount, demo=False)` signatures remain unchanged.
 - Demo account IDs are opaque and unique per account pair. Always use the IDs returned
   by `setup_accounts`; do not hard-code IDs or read the private `_DEMO` store.
 - Transfers require a positive, finite dollar amount with at most two decimal places
   and enough checking funds. Validation raises `ValueError` before submission.
-- The website hides transfers when a goal is funded or checking funds are insufficient.
-  Each browser session keeps separate demo and Nessie account selections.
 - Nessie requests use `https://prod-api.nessieisreal.com` with TLS verification and
   redirects disabled. No fallback sends a credential over HTTP. Service failures raise
   `BankError` with safe text instead of a URL containing the API key.
-- A successful live request means submitted, not settled. After a live submission or
-  uncertain failure, this prototype pauses further transfers for that wallet/session.
-  Verify the transfer in Nessie; status reconciliation is not implemented yet.
 - Demo balances live only in server memory and are isolated by account pair. A restart
   loses them; abandoned pairs remain until restart. This is not persistent group banking.
 - Live service availability and authenticated account/transfer behavior still need a
   smoke test by the banking owner. Automated tests never use actual API credentials.
 
 ## Notes
-- Nessie is a sandbox: money is fake, so "automated saving" is simulated.
-- "Run this week's transfer" submits one contribution; it does not advance the date.
-- Sample prices stay visibly labeled after every rerun. The funding caption separately
-  identifies demo balances versus the Nessie sandbox, including when only one key is set.
+- Nessie is a sandbox: money is fake and nothing is booked. Picks are a spending plan.
+- Sample prices stay visibly labeled after every rerun. The budget caption separately
+  identifies demo money versus the Nessie sandbox. The sidebar has separate switches for
+  sample prices and the demo bank, so either key works on its own.
+- Changing the budget, trip details or a sidebar switch blocks the old results until
+  **Start planning** runs again (which starts a fresh trip).
 
 ## Integration handoff
 - Person 4's branch includes rounding, deadline checks, transfer safeguards, and the
@@ -82,18 +91,16 @@ python -m unittest discover -s tests -p test_planner.py -v
 - `travel.py` still returns the same normalized dictionaries. Flight prices are round-trip
   USD values; hotel `total` must cover the complete stay. Live hotels missing that total
   are skipped instead of using one night's rate. Demo totals equal nightly rate times nights.
-- Search dates must be valid and return after departure. Changing the search inputs or
-  demo mode blocks old prices and funding until a new search completes.
-- Offline tests cover price normalization, travel-to-budget-to-bank flow, same-day and
-  future savings, insufficient funds, fully funded goals, safe error handling, pending live
-  submissions, and mode switching. No automated test calls either external API.
-- Default demo: $412 flight + $89 x 7 nights + $200 extras = **$1,235**. With a deadline
-  four weeks away, the first contribution is **$308.75**. With a deadline today, it is
-  **$1,235** and the fund becomes fully funded after one contribution.
-- Live verification is still outstanding: configure keys privately, confirm current Nessie
-  account/transfer responses, and verify authenticated SerpApi prices. A credential-free
-  Nessie HTTPS probe on 2026-10-24 returned a service error; this branch does not claim live
-  service availability. See [Nessie](https://nessieisreal.com/docs) and
+- Search dates must be valid and return after departure.
+- Offline tests cover price normalization, the budget -> picks -> savings -> final cost flow,
+  whole-dollar rounding, over-budget warnings, safe error handling, `$` escaping, mocked live
+  Nessie payloads, demo/live isolation, and the Trip Fund transfer contract. No automated test
+  calls either external API.
+- Default demo ($1,500 budget): Southwest $412 (typical $438, saves $26) + Seaside Budget Inn
+  $89 x 7 = $623 (typical $924, saves $301) = **$1,035 spent, $327 saved, $465 left**.
+- Live Nessie: the trip budget tracker passed a 9/9 smoke test with a real key on 2026-10-24
+  (create trip, picks, savings deposits, totals, removal). SerpApi live prices still need a
+  check with a real key. See [Nessie](https://nessieisreal.com/docs) and
   [SerpApi hotel totals](https://serpapi.com/google-hotels-api).
 - Teammates' unpublished work cannot be checked here. Re-run the suite after their branches
   are integrated. Persistent group plans, voting, authentication, a scheduler, and Gemini
