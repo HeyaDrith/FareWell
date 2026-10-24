@@ -2,6 +2,7 @@
 
 Run:  streamlit run app.py
 """
+import math
 import os
 from datetime import date, timedelta
 
@@ -128,12 +129,15 @@ if flights and hotels:
             st.error("Could not load account balances. Funding is paused until balances are available.")
             st.stop()
         weekly = planner.weekly_amount(budget, saved, deadline)
+        if not bank_demo:
+            weekly = float(math.ceil(weekly))  # Nessie only records whole dollars
 
+        # Escape "$" so Streamlit does not treat pairs of them as math formatting.
         st.progress(min(1.0, saved / budget) if budget else 0.0,
-                    text=f"${saved:,.0f} of ${budget:,.0f} saved")
+                    text=f"\\${saved:,.0f} of \\${budget:,.0f} saved")
         contribution_timing = "today" if deadline == date.today() else "per week"
-        st.write(f"**Plan:** move **${weekly:,.2f} {contribution_timing}** from checking "
-                 f"(balance ${checking:,.2f}).")
+        st.write(f"**Plan:** move **\\${weekly:,.2f} {contribution_timing}** from checking "
+                 f"(balance \\${checking:,.2f}).")
 
         if weekly == 0:
             st.success("🎉 Trip fully funded. Time to book!")
@@ -154,4 +158,5 @@ if flights and hotels:
                 except Exception:
                     st.error("Could not confirm the transfer. Check its status before trying again.")
                 else:
+                    wallet["transfer_pending"] = False  # confirmed; balances now reflect it
                     st.rerun()

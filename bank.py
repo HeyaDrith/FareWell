@@ -63,7 +63,7 @@ def _request(method: str, path: str, body: dict | None = None) -> dict:
         if not 200 <= r.status_code < 300:
             raise BankError("Nessie could not confirm the request. Check the service and your credentials.")
         result = r.json()
-        if not isinstance(result, dict):
+        if not isinstance(result, (dict, list)):
             raise BankError("Nessie returned an unexpected response.")
         return result
     except (requests.RequestException, ValueError):
@@ -104,12 +104,23 @@ def get_balance(account_id: str, demo: bool = False) -> float:
     if account_id.startswith("demo-"):
         raise ValueError("Demo accounts cannot be used with Nessie.")
     try:
+        # The Nessie sandbox records deposits and withdrawals but never updates the
+        # account's own balance, so add the completed records to the opening balance.
         value = float(_get(f"/accounts/{account_id}")["balance"])
+        value += _completed_total(account_id, "deposits")
+        value -= _completed_total(account_id, "withdrawals")
         if not Decimal(str(value)).is_finite() or value < 0:
             raise ValueError
         return value
     except (KeyError, TypeError, ValueError):
         raise BankError("Nessie returned an invalid account balance.") from None
+
+
+def _completed_total(account_id: str, kind: str) -> float:
+    records = _get(f"/accounts/{account_id}/{kind}")
+    if not isinstance(records, list):
+        raise ValueError
+    return sum(float(r["amount"]) for r in records if r.get("status") == "completed")
 
 
 def transfer(from_id: str, to_id: str, amount: float, demo: bool = False) -> None:
@@ -136,10 +147,16 @@ def transfer(from_id: str, to_id: str, amount: float, demo: bool = False) -> Non
         raise ValueError("Demo accounts cannot be used with Nessie.")
     if value > Decimal(str(get_balance(from_id, demo))):
         raise ValueError("Not enough money in checking for this contribution.")
-    _post(f"/accounts/{from_id}/transfers", {
+    if value != value.to_integral_value():
+        raise ValueError("Nessie contributions must be whole dollars.")
+    # Nessie's transfer endpoint has no destination field, so record the move as a
+    # withdrawal from checking plus a matching deposit into the Trip Fund.
+    record = {
         "medium": "balance",
-        "payee_id": to_id,
-        "amount": float(value),
+        "status": "completed",
+        "amount": int(value),
         "transaction_date": date.today().isoformat(),
         "description": "Weekly Trip Fund deposit",
-    })
+    }
+    _post(f"/accounts/{from_id}/withdrawals", record)
+    _post(f"/accounts/{to_id}/deposits", record)

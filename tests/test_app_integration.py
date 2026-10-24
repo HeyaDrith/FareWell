@@ -55,7 +55,12 @@ class AppIntegrationTests(DemoAppCase):
         def service(method, url, **kwargs):
             body = kwargs.get("json")
             bank_calls.append((method, url, body))
-            if method == "GET":
+            if method == "GET" and url.endswith(("/deposits", "/withdrawals")):
+                kind = url.rsplit("/", 1)[1]
+                account = url.split("/")[-2]
+                result = [{"amount": call[2]["amount"], "status": "completed"}
+                          for call in bank_calls if call[0] == "POST" and call[1].endswith(f"/{account}/{kind}")]
+            elif method == "GET":
                 result = {"balance": 3000 if url.endswith("/checking") else 0}
             elif url.endswith("/customers"):
                 result = {"objectCreated": {"_id": "customer"}}
@@ -82,19 +87,17 @@ class AppIntegrationTests(DemoAppCase):
             self.assertEqual(self.app.metric[0].value, "$1,330")
             self.click("Create my Trip Fund")
             self.set_deadline(date.today() + timedelta(days=28))
-            self.click("Run this week's transfer ($332.50)")
-            self.assertIn("Further transfers are paused", self.visible_text())
-            self.app.run()
-            transfers = [call for call in bank_calls if call[1].endswith("/transfers")]
-            self.assertEqual(len(transfers), 1)
-            self.assertEqual(transfers[0][2]["amount"], 332.50)
-            self.assertEqual(transfers[0][2]["payee_id"], "fund")
+            # Live Nessie amounts are rounded up to whole dollars.
+            self.click("Run this week's transfer ($333.00)")
+            self.assertNotIn("Further transfers are paused", self.visible_text())
+            moves = [call for call in bank_calls if call[0] == "POST" and call[1].endswith(("/withdrawals", "/deposits"))]
+            self.assertEqual([(call[1].rsplit("/", 2)[1:], call[2]["amount"]) for call in moves],
+                             [(["checking", "withdrawals"], 333), (["fund", "deposits"], 333)])
+            self.assertIn("balance $2,667.00", self.visible_text().replace("\\", ""))
             self.app.toggle[0].set_value(True).run()
             self.click("Search prices")
             self.assertEqual(self.app.session_state.wallets["demo"]["accounts"], demo_wallet)
-            self.assertNotIn("Further transfers are paused", self.visible_text())
             self.assertEqual(bank.get_balance(demo_wallet["fund_id"], True), 0)
             self.app.toggle[0].set_value(False).run()
             self.click("Search prices")
-            self.assertIn("Further transfers are paused", self.visible_text())
-            self.assertEqual(len([call for call in bank_calls if call[1].endswith("/transfers")]), 1)
+            self.assertEqual(len([c for c in bank_calls if c[0] == "POST" and c[1].endswith("/deposits")]), 1)
