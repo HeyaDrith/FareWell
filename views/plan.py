@@ -46,7 +46,7 @@ def run_bank(fn, *args):
 # Keyed widgets with session defaults, so an applied Gemini draft can fill them in.
 for key, default in {
     "trip_budget": 1500, "trip_origin": "AUS", "trip_destination": "CUN",
-    "trip_city": "hotels in Cancun", "trip_depart": date.today() + timedelta(days=90),
+    "trip_area": "", "trip_depart": date.today() + timedelta(days=90),
     "trip_return": date.today() + timedelta(days=97),
 }.items():
     ss.setdefault(key, default)
@@ -62,17 +62,9 @@ for key in ("trip_origin", "trip_destination"):
     ss[key] = code if code in known else None
 
 
-def follow_destination():
-    """Picking a destination fills in the hotel search for that city."""
-    code = (ss.get("trip_destination") or "").strip().upper()
-    if travel.airport_city(code):
-        ss.trip_city = f"hotels in {travel.airport_city(code)}"
-
-
 def from_hero_search():
-    """The hero search box is a shortcut for the form's To field."""
+    """The hero search box is a shortcut for the form's To field (hotels follow the To city)."""
     ss.trip_destination = ss.get("hero_destination")
-    follow_destination()
 
 
 # ---- Hero: title, tagline and the destination search ----
@@ -114,11 +106,18 @@ with st.container(key="card-trip"):
                            placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER)
               or "").strip().upper()
     dest = (c2.selectbox("To", airports, index=None, key="trip_destination", format_func=travel.airport_label,
-                         placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER,
-                         on_change=follow_destination) or "").strip().upper()
+                         placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER)
+            or "").strip().upper()
     depart = c1.date_input("Depart", value=None, key="trip_depart")
     ret = c2.date_input("Return", value=None, key="trip_return")
-    city = st.text_input("Hotel search", key="trip_city") or ""
+    # Hotels are always searched in the To airport's city; this box only narrows that search.
+    area = st.text_input("Hotel area or type (optional)", key="trip_area", max_chars=travel.MAX_AREA_CHARS,
+                         placeholder="e.g. Zona Hotelera, resorts, near the beach")
+    city = travel.hotel_query(dest, area)
+    hotel_city = travel.hotel_city(dest)
+    st.caption((f"We'll search hotels in {esc(hotel_city)}, where your flight lands. " if hotel_city else
+                "We'll search hotels where your flight lands. ")
+               + "Add an area or a type of stay to narrow it, or leave it blank.")
 
     date_error = planner.trip_input_error(origin, dest, depart, ret)
     back, go = st.columns([3, 1])
@@ -129,7 +128,7 @@ with st.container(key="card-trip"):
 if date_error:
     st.stop()
 
-search_fields = {"trip_origin": origin, "trip_destination": dest, "trip_city": city,
+search_fields = {"trip_origin": origin, "trip_destination": dest, "trip_area": area.strip(),
                  "trip_depart": depart, "trip_return": ret}
 draft_ui.render_planning_notes(search_fields)
 
@@ -179,7 +178,7 @@ pick_ids = {(p["category"], p["description"]): p["id"] for p in summary["picks"]
 if notice := ss.pop("pick_notice", None):  # confirm the last add/remove after the rerun
     st.toast(notice)
 days = max(1, (ret - depart).days + 1)
-place = city.removeprefix("hotels in ").strip() or dest
+place = travel.hotel_city(dest) or dest
 
 spent_on = {c: sum(p["amount"] for p in summary["picks"] if p["category"] == c) for c in planner.BUDGET_SPLIT}
 # For a part already picked, its budget includes what swapping it would give back.
@@ -327,6 +326,8 @@ if not (flights and hotels):
     st.warning("No matching flights or hotels with complete prices. Try different dates or a different destination.")
 
 flights_shown, hotels_shown = flights[:6], hotels[:6]
+# Download the logos and photos once, in parallel (cached), before the cards and map use them.
+travel.prefetch_pictures([f.get("logo") for f in flights_shown] + [h.get("image") for h in hotels_shown])
 shortest = min((f["duration_min"] for f in flights_shown if f["duration_min"]), default=0)
 flight_chosen = planner.pick_options([f["price"] for f in flights_shown],
                                      [planner.flight_quality(f, shortest) for f in flights_shown], allowance["Flight"])
@@ -368,7 +369,8 @@ if flights:
             description = f"{f['airline']} flight {origin}→{dest}" + (f" ({flight_id(f)})" if flight_id(f) else "")
             pick_id = pick_for("Flight", description)
             with st.container(key=f"opt-flight-{i}" + ("-picked" if pick_id else "")):
-                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
+                pic, a, b, c = st.columns([1.5, 4, 3, 1.4], vertical_alignment="center")
+                pic.html(ui.picture(f.get("logo"), "flight"))
                 a.markdown(f"**{esc(f['airline'])}** · " + (f"{esc(flight_id(f))} · " if flight_id(f) else "")
                            + f"{f['duration_min'] // 60}h {f['duration_min'] % 60}m · "
                            f"{'Nonstop' if not stops else f'{stops} stop' + ('s' if stops > 1 else '')}"
@@ -394,7 +396,8 @@ if hotels:
             saved = planner.savings_vs_typical(h["total"], typical)
             pick_id = pick_for("Hotel", h["name"])
             with st.container(key=f"opt-hotel-{i}" + ("-picked" if pick_id else "")):
-                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
+                pic, a, b, c = st.columns([1.5, 4, 3, 1.4], vertical_alignment="center")
+                pic.html(ui.picture(h.get("image"), "hotel"))
                 a.markdown(f"**{esc(h['name'])}** · {h['rating']}★ · {money(h['per_night'])}/night"
                            + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else "") + added_line(pick_id))
                 views = [("View hotel ↗" if h.get("property_token") else "Find hotel ↗", hotel_buttons(h)[0][1]),

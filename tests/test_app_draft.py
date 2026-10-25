@@ -177,7 +177,8 @@ class AppDraftTests(DemoAppCase):
             self.click("Apply reviewed draft")
             self.assertEqual(self.app.selectbox(key="trip_origin").value, "DFW")
             self.assertEqual(self.app.selectbox(key="trip_destination").value, "CDG")
-            self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in Paris")
+            self.assertEqual(self.app.text_input(key="trip_area").value, "")  # Paris is where CDG is
+            self.assertIn("We'll search hotels in Paris", self.visible_text())
 
     def test_a_plan_without_dates_gets_suggested_dates(self):
         result = trip_draft.TripDraft(plans=[trip_draft.PlanOption(label="Somewhere sunny", destination="MIA")])

@@ -107,17 +107,40 @@ with st.container(key="card-fund-progress"):
     waiting = not demo and today < fund["next_due"]
     if waiting:
         st.info(f"This week's contribution is complete. Your next contribution is due {fund['next_due']:%b %d, %Y}.")
-    st.caption("Contributions round up to whole dollars; the last contribution covers only what's left. Nothing runs automatically.")
+    st.caption("Contributions round up to whole dollars; the last contribution covers only what's left. "
+               "You can change this week's amount below. Nothing runs automatically.")
     if demo and rows:
         st.caption(f"Next simulated contribution: {rows[0]['Date']:%b %d, %Y}.")
+    amount = weekly
+    if rows:
+        # Put in less when money is tight, or more to get ahead; the later weeks adjust. The key
+        # follows the week and its planned amount, so the box resets to the plan after each transfer.
+        amount = int(st.number_input("Amount this week ($)", min_value=1, max_value=max(1, int(remaining)),
+                                     value=int(min(weekly, remaining)), step=5,
+                                     key=f"fund_amount_{mode}_{rows[0]['Date']}_{weekly}",
+                                     help=f"The plan suggests \\${weekly:,.0f}. Change it for this week only."))
+        if amount != weekly:
+            later = funding.plan_after(fund, saved, amount, today)
+            left_after = remaining - amount
+            if left_after <= 0:
+                st.caption("This contribution completes your goal.")
+            elif later:
+                st.caption(f"Then about \\${later[0]['Contribution ($)']:,.0f}/week for {len(later)} more "
+                           f"week{'s' * (len(later) != 1)} to reach your target by the deadline.")
+            else:
+                st.warning(f"No weeks remain before your deadline, so \\${left_after:,.0f} would still be "
+                           "left to save. Contribute more or move your deadline.")
+        if amount > checking:
+            st.warning(f"Checking has \\${checking:,.2f}, less than \\${amount:,.0f}. Choose a smaller amount.")
     if st.button("Run this week's transfer", type="primary", disabled=bool(
-            error or changed or not rows or weekly > checking or fund["pending"] or waiting)):
+            error or changed or not rows or amount > checking or fund["pending"] or waiting)):
         try:
-            funding.contribute(fund, today)
+            funding.contribute(fund, today, amount=None if amount == weekly else amount)
         except (ValueError, bank.BankError) as exc:
-            ss.fund_notice = str(exc)
+            ss.fund_notice = str(exc).replace("$", "\\$")
         else:
-            ss.fund_notice = "Contribution completed. Your Trip Fund is growing!"
+            ss.fund_notice = (f"Contributed \\${amount:,.0f}. Your Trip Fund is growing!"
+                              + ("" if amount == weekly else " The rest of your plan has adjusted."))
         st.rerun()
     if notice := ss.pop("fund_notice", None):
         st.info(notice)

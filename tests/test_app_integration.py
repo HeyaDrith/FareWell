@@ -190,8 +190,8 @@ class AppTripTests(DemoAppCase):
         self.assertEqual([label for label, _ in buttons],
                          ["Book on Google Flights ↗", "Find this hotel ↗", "Open in Google Maps ↗"])
         self.assertTrue(buttons[0][1].startswith("https://www.google.com/travel/flights/search?tfs="))
-        self.assertTrue(buttons[1][1].startswith("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Cancun"))
-        self.assertEqual(buttons[2][1], "https://www.google.com/maps/search/?api=1&query=Taqueria+El+Fogon+Cancun")
+        self.assertTrue(buttons[1][1].startswith("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Canc%C3%BAn"))
+        self.assertEqual(buttons[2][1], "https://www.google.com/maps/search/?api=1&query=Taqueria+El+Fogon+Canc%C3%BAn")
 
     def test_live_listings_link_to_the_exact_hotel_and_flight(self):
         flights = [{"airline": "Southwest", "price": 400.0, "duration_min": 195, "stops": 0,
@@ -215,7 +215,7 @@ class AppTripTests(DemoAppCase):
         self.assertIn("[View on Google Flights ↗](https://www.google.com/travel/flights/search?tfs=", self.plain_text())
         hotel_links = [m.value for m in self.app.markdown if "[Find hotel ↗](" in m.value]
         self.assertEqual(len(hotel_links), 3)  # one per sample hotel, before anything is added
-        self.assertIn("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Cancun", hotel_links[0])
+        self.assertIn("https://www.google.com/travel/hotels?q=Seaside+Budget+Inn+Canc%C3%BAn", hotel_links[0])
         flight_links = [m.value for m in self.app.markdown if "[View on Google Flights ↗](" in m.value]
         self.assertEqual(len(flight_links), 3)
         self.assertEqual(self.link_buttons(), [])  # the big booking buttons still come with picks
@@ -366,10 +366,19 @@ class AppTripTests(DemoAppCase):
         self.assertIn("DFW · Dallas-Fort Worth", origin.options)
         self.assertGreater(len(origin.options), 4000)
 
-    def test_picking_a_destination_fills_hotel_search_and_requires_new_plan(self):
+    def test_hotels_are_searched_where_the_flight_lands_with_an_optional_area(self):
+        area = self.app.text_input(key="trip_area")
+        self.assertEqual((area.label, area.value), ("Hotel area or type (optional)", ""))
+        self.assertIn("We'll search hotels in Cancún, where your flight lands.", self.visible_text())
         self.app.selectbox(key="trip_destination").select("SJU").run()
-        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in San Juan")
+        self.assertIn("We'll search hotels in San Juan", self.visible_text())  # follows the To airport
         self.assertIn("Trip details changed", self.visible_text())
+        with patch("travel.search_hotels", return_value=[]) as search:
+            self.app.text_input(key="trip_area").input("Condado").run()
+            self.click("Start planning")
+            self.app.text_input(key="trip_area").input("").run()
+            self.click("Start planning")  # blank still searches the city, never sample data
+        self.assertEqual([c.args[0] for c in search.call_args_list], ["hotels in San Juan Condado", "hotels in San Juan"])
 
     def test_form_has_from_and_to_and_the_hero_search_stays_in_sync(self):
         labels = [s.label for s in self.app.selectbox]
@@ -377,12 +386,12 @@ class AppTripTests(DemoAppCase):
         self.assertIn("To", labels)
         hero = self.app.selectbox(key="hero_destination")
         self.assertEqual(hero.value, "CUN")  # mirrors the form's To field
-        hero.select("SJU").run()  # searching in the hero sets To and the hotel search
+        hero.select("SJU").run()  # searching in the hero sets To, and so the hotel city
         self.assertEqual(self.app.selectbox(key="trip_destination").value, "SJU")
-        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in San Juan")
+        self.assertIn("We'll search hotels in San Juan", self.visible_text())
         self.app.selectbox(key="trip_destination").select("MIA").run()  # and the other way round
         self.assertEqual(self.app.selectbox(key="hero_destination").value, "MIA")
-        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in Miami")
+        self.assertIn("We'll search hotels in Miami", self.visible_text())
 
     def test_only_listed_airports_can_be_chosen(self):
         listed = [travel.airport_label(code) for code in travel.airport_codes()]

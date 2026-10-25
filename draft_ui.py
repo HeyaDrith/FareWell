@@ -211,7 +211,9 @@ def _render_review(draft: trip_draft.TripDraft):
         left, right = st.columns(2)
         origin = left.text_input("Draft departure airport", key="draft_review_origin", max_chars=3)
         destination = right.text_input("Draft arrival airport", key="draft_review_destination", max_chars=3)
-        city = st.text_input("Draft hotel city", key="draft_review_city", max_chars=100)
+        city = st.text_input("Draft hotel city (optional)", key="draft_review_city", max_chars=100,
+                             help="Hotels are searched where the flight lands. A different city here "
+                                  "(e.g. Tulum when flying into Cancún) narrows that search.")
         depart = left.date_input("Draft departure date", min_value=today, max_value=latest, key="draft_review_depart")
         return_date = right.date_input("Draft return date", min_value=today, max_value=latest, key="draft_review_return")
         travelers = left.number_input("Travelers (optional)", min_value=1, max_value=20, key="draft_review_travelers")
