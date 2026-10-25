@@ -97,7 +97,7 @@ def setup_accounts(demo: bool = False) -> dict:
         return {"checking_id": f"{group}-checking", "fund_id": f"{group}-fund"}
 
     customer = _post("/customers", {
-        "first_name": "Trip", "last_name": "Saver",
+        "first_name": "FareWell", "last_name": "Traveler",
         "address": {"street_number": "1", "street_name": "Congress Ave",
                     "city": "Austin", "state": "TX", "zip": "78701"},
     })["objectCreated"]
@@ -205,7 +205,7 @@ def create_trip(budget: float, demo: bool = False) -> dict:
         return {"budget": budget, "budget_id": budget_id, "savings_id": f"{budget_id}-sav",
                 "demo": True, "removed": []}
 
-    customer = _post("/customers", {"first_name": "Trip", "last_name": "Saver",
+    customer = _post("/customers", {"first_name": "FareWell", "last_name": "Traveler",
                                     "address": _ADDRESS})["objectCreated"]
     accounts = f"/customers/{customer['_id']}/accounts"
     budget_acct = _post(accounts, {"type": "Checking", "nickname": "Trip Budget",
@@ -375,7 +375,7 @@ def _demo_trip(trip: dict) -> dict:
 
 def _merchant_id(category: str) -> str:
     if category not in _MERCHANTS:
-        created = _post("/merchants", {"name": f"Trip Saver {category}", "category": category,
+        created = _post("/merchants", {"name": f"FareWell {category}", "category": category,
                                        "address": _ADDRESS,
                                        "geocode": {"lat": 30.2672, "lng": -97.7431}})["objectCreated"]
         _MERCHANTS[category] = created["_id"]

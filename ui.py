@@ -64,6 +64,8 @@ h2 { font-weight: 800 !important; }
 /* Top bar (st.navigation position="top") in the design's light blue */
 header[data-testid="stHeader"] { background: rgba(220, 234, 247, 0.92); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--ts-line); }
+img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !important; width: auto !important;
+  margin-right: 0.75rem; }
 
 /* Pill inputs like the Figma form */
 [data-baseweb="input"], [data-baseweb="select"] > div, [data-testid="stNumberInputContainer"] {

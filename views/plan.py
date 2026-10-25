@@ -75,7 +75,7 @@ def from_hero_search():
 # ---- Hero: title, tagline and the destination search ----
 hero = st.container(key="hero-plan")
 with hero:
-    st.title("Trip Saver")
+    st.title("FareWell")
     st.html("<div class='ts-hero-sub'>Tell us your budget and destination. "
             "We'll find the trip that fits and track what you save.</div>")
 

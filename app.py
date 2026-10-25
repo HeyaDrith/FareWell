@@ -1,4 +1,4 @@
-"""Trip Saver: type a budget and destination, pick the options that fit, and see the savings.
+"""FareWell: type a budget and destination, pick the options that fit, and see the savings.
 
 Run:  streamlit run app.py
 
@@ -6,6 +6,7 @@ This file is the router: shared setup, the data-source switches and the top navi
 The pages are views/home.py (dashboard) and views/plan.py (the trip planner).
 """
 import os
+from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -21,7 +22,10 @@ try:
 except Exception:
     pass
 
-st.set_page_config(page_title="Trip Saver", page_icon="✈️", layout="wide")
+# Paths from this file, so the app also runs when launched from another folder.
+ASSETS = Path(__file__).parent / "assets"
+st.set_page_config(page_title="FareWell", page_icon=str(ASSETS / "farewell-icon.svg"), layout="wide")
+st.logo(str(ASSETS / "farewell-logo.svg"), size="large")  # the full wordmark in the top bar
 ui.inject_css()
 
 home = st.Page("views/home.py", title="Home", icon=":material/home:", default=True)

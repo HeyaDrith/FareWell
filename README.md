@@ -1,4 +1,4 @@
-# ✈️ Trip Saver
+# ✈️ FareWell
 
 Type a budget and destination, pick the flights, hotels, food and activities that fit, and
 see how much you save. Prices come from SerpApi; every pick is tracked in Capital One's

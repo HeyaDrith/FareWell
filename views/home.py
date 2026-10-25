@@ -18,8 +18,8 @@ if trip:
         summary = None
 history = ss.get("trip_history", [])
 
-st.markdown("<h1 style='margin-bottom:0'>Welcome, traveler 👋</h1>", unsafe_allow_html=True)
-st.caption("Plan a trip that fits your budget, see it on the map, and lock it in.")
+st.markdown("<h1 style='margin-bottom:0'>Welcome to FareWell 👋</h1>", unsafe_allow_html=True)
+st.caption("The best trip your budget can buy: plan it, see it on the map, and lock it in.")
 st.header("Dashboard Summary")
 
 # ---- Finances: the Nessie trip accounts ----
