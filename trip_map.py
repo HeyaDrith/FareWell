@@ -9,9 +9,10 @@ import travel
 MAX_HOTEL_KM = 150  # hotels farther than this from the destination airport aren't plotted
 
 ORIGIN_RGB, LAYOVER_RGB, DEST_RGB = [22, 163, 74], [234, 179, 8], [220, 38, 38]  # start green, end red
-ROUTE_RGB = [14, 124, 196]
 HOTEL_RGB, RECOMMENDED_RGB, PICKED_RGB = [100, 116, 139], [234, 179, 8], [22, 163, 74]
-# Flat, north-up maps: no tilting or spinning by drag, so a route never looks skewed.
+ARC_HEIGHT = 0.35  # arcs rise to about a third of deck.gl's default, so long legs don't tower
+ROUTE_PITCH = 30   # a fixed, gentle tilt gives the route map its 3D look
+# North-up maps that can't be tilted or spun by dragging, so a route never ends up skewed.
 _FLAT_VIEW = pdk.View(type="MapView", controller={"dragRotate": False, "touchRotate": False}, repeat=True)
 
 
@@ -89,22 +90,17 @@ def _view(positions: list[list[float]], max_zoom: float) -> pdk.ViewState:
     return pdk.ViewState(latitude=round(center_lat, 4), longitude=round(center_lon, 4), zoom=round(zoom, 2))
 
 
-def _mercator_y(lat: float) -> float:
-    """Web Mercator y in degree-like units, so arrow shapes aren't squashed near the poles."""
-    lat = max(-85.0, min(85.0, lat))
-    return math.degrees(math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)))
-
-
-def _lat_from_y(y: float) -> float:
-    return math.degrees(2 * math.atan(math.exp(math.radians(y))) - math.pi / 2)
+def _stop_color(i: int, last: int) -> list[int]:
+    return ORIGIN_RGB if i == 0 else DEST_RGB if i == last else LAYOVER_RGB
 
 
 def route_geometry(stops: list[dict]) -> dict:
-    """Straight legs between airports, with an arrowhead on each pointing the way you fly.
+    """Arc legs between airports, each fading from where it leaves to where it lands.
 
-    Longitudes are made continuous from the first airport, so a route over the date line
-    draws across the Pacific instead of around the world. Returns
-    {"positions": [[lon, lat], ...], "legs": [{"path", "label"}], "arrows": [{"polygon", "label"}]}.
+    The first leg starts green, the last ends red and layovers are amber, so the color shift
+    along each arc shows the direction of travel. Longitudes are made continuous from the
+    first airport, so a route over the date line crosses the Pacific instead of the world.
+    Returns {"positions": [[lon, lat], ...], "legs": [{"from", "to", "from_color", "to_color", "label"}]}.
     """
     positions = []
     for s in stops:
@@ -115,25 +111,11 @@ def route_geometry(stops: list[dict]) -> dict:
             while lon - positions[-1][0] < -180:
                 lon += 360
         positions.append([lon, s["lat"]])
-
-    xs = [p[0] for p in positions]
-    ys = [_mercator_y(p[1]) for p in positions]
-    size = max(max(xs) - min(xs), max(ys) - min(ys), 1) * 0.04  # one arrow size for the whole map
-    legs, arrows = [], []
-    for i, (a, b) in enumerate(zip(stops, stops[1:])):
-        label = f"{a['code']} → {b['code']}"
-        legs.append({"path": [positions[i], positions[i + 1]], "label": label})
-        (x1, y1), (x2, y2) = (xs[i], ys[i]), (xs[i + 1], ys[i + 1])
-        length = math.hypot(x2 - x1, y2 - y1)
-        if length < size * 2.5:  # too short to fit an arrow (e.g. a hop to a nearby airport)
-            continue
-        ux, uy = (x2 - x1) / length, (y2 - y1) / length
-        tip_x, tip_y = x1 + ux * length * 0.58, y1 + uy * length * 0.58
-        base_x, base_y = tip_x - ux * size, tip_y - uy * size
-        corners = [(tip_x, tip_y), (base_x - uy * size * 0.62, base_y + ux * size * 0.62),
-                   (base_x + uy * size * 0.62, base_y - ux * size * 0.62)]
-        arrows.append({"polygon": [[x, round(_lat_from_y(y), 5)] for x, y in corners], "label": label})
-    return {"positions": positions, "legs": legs, "arrows": arrows}
+    last = len(stops) - 1
+    legs = [{"from": positions[i], "to": positions[i + 1], "label": f"{a['code']} → {b['code']}",
+             "from_color": _stop_color(i, last), "to_color": _stop_color(i + 1, last)}
+            for i, (a, b) in enumerate(zip(stops, stops[1:]))]
+    return {"positions": positions, "legs": legs}
 
 
 def _airport_layers(stops: list[dict], positions: list[list[float]] | None = None) -> list[pdk.Layer]:
@@ -145,16 +127,18 @@ def _airport_layers(stops: list[dict], positions: list[list[float]] | None = Non
         role = "End" if i == last else "Start" if i == 0 else "Layover"
         rows.append({"position": pos, "code": s["code"], "role": role,
                      "color": {"Start": ORIGIN_RGB, "End": DEST_RGB}.get(role, LAYOVER_RGB),
-                     "radius": 6 if role == "Layover" else 9,
                      "label": f"{role}: {s['code']} · {s['city']}"})
     ends = [dict(r, color=r["color"] + [70]) for r in rows if r["role"] != "Layover"]
+    # Sizes are pinned in screen pixels with min = max on a 1 m radius (radiusUnits "pixels"
+    # isn't applied through Streamlit, which made markers balloon when zoomed in).
     # Dots only: Streamlit's deck.gl TextLayer draws empty labels in some browsers, so the
     # airport codes are in the hover tooltip and the legend under the map instead.
     return [pdk.Layer("ScatterplotLayer", rows, get_position="position", get_fill_color="color",
-                      get_radius="radius", radius_units="pixels", pickable=True,
-                      stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=3),
+                      get_radius=1, radius_min_pixels=7, radius_max_pixels=7, pickable=True,
+                      stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=2,
+                      parameters={"depthTest": False}),  # always on top of where the arcs touch down
             pdk.Layer("ScatterplotLayer", ends, get_position="position", get_fill_color="color",
-                      get_radius=14, radius_units="pixels")]  # soft halo on the start and the end
+                      get_radius=1, radius_min_pixels=15, radius_max_pixels=15)]  # halo on start and end
 
 
 def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], place: str):
@@ -166,16 +150,20 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
         else:
             shape = route_geometry(stops)
             dots, halos = _airport_layers(stops, shape["positions"])
+            # Widths pinned in screen pixels (min = max), like the markers, so arcs keep their
+            # thickness at every zoom.
+            arc = dict(get_source_position="from", get_target_position="to", get_height=ARC_HEIGHT, get_width=1)
             layers = [
-                # A white casing under the route keeps it readable over coastlines and borders.
-                pdk.Layer("PathLayer", shape["legs"], get_path="path", get_color=[255, 255, 255],
-                          get_width=8, width_units="pixels", cap_rounded=True),
-                pdk.Layer("PathLayer", shape["legs"], get_path="path", get_color=ROUTE_RGB,
-                          get_width=4, width_units="pixels", cap_rounded=True, pickable=True),
-                pdk.Layer("PolygonLayer", shape["arrows"], get_polygon="polygon", get_fill_color=ROUTE_RGB,
-                          get_line_color=[255, 255, 255], line_width_min_pixels=1, stroked=True),
-                halos, dots]
+                halos,
+                # A white casing under each arc keeps it readable over coastlines and borders.
+                pdk.Layer("ArcLayer", shape["legs"], get_source_color=[255, 255, 255], get_target_color=[255, 255, 255],
+                          width_min_pixels=8, width_max_pixels=8, **arc),
+                pdk.Layer("ArcLayer", shape["legs"], get_source_color="from_color", get_target_color="to_color",
+                          width_min_pixels=4, width_max_pixels=4, pickable=True, **arc),
+                dots]
             view = _view(shape["positions"], max_zoom=8)
+            # Tilted views show more map toward the horizon; zoom out a touch so both ends fit.
+            view.pitch, view.zoom = ROUTE_PITCH, max(1.0, round(view.zoom - 0.35, 2))
             st.pydeck_chart(pdk.Deck(layers=layers, views=[_FLAT_VIEW], map_style="light", initial_view_state=view,
                                      tooltip={"text": "{label}"}), height=MAP_HEIGHT)
             layovers = [s["code"] for s in stops[1:-1]]
@@ -184,7 +172,8 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
                        + (f" (layover in {', '.join(layovers)})" if layovers else " (nonstop)") + ".  \n"
                        + f"🟢 **Start** {start['code']} · {esc_md(start['city'])}"
                        + (f"  →  🟡 {', '.join(layovers)}" if layovers else "")
-                       + f"  →  🔴 **End** {end['code']} · {esc_md(end['city'])}. Arrows point the way you fly.")
+                       + f"  →  🔴 **End** {end['code']} · {esc_md(end['city'])}. "
+                       "Each arc fades from where it leaves to where it lands.")
     with hotel_tab:
         if not hotels_on_map:
             st.caption("No hotel locations to show for this search.")

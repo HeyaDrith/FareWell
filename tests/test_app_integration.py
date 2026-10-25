@@ -228,17 +228,19 @@ class AppTripTests(DemoAppCase):
         decks = [json.loads(d.proto.json) for d in self.app.get("deck_gl_json_chart")]
         self.assertEqual([t.label for t in self.app.tabs], ["✈️ Flight path", "🏨 Hotels on the map"])
         route, hotels = decks
-        # Flat route (white casing + line), direction arrows, start/end halos, airport dots.
+        # Start/end halos, white arc casing, colored arcs, airport dots on top.
         self.assertEqual([layer["@@type"] for layer in route["layers"]],
-                         ["PathLayer", "PathLayer", "PolygonLayer", "ScatterplotLayer", "ScatterplotLayer"])
-        self.assertNotIn("ArcLayer", json.dumps(route))  # no 3D arches
-        self.assertEqual([p["label"] for p in route["layers"][4]["data"]], ["Start: AUS · Austin", "End: CUN · Cancún"])
-        self.assertEqual(len(route["layers"][1]["data"]), 1)  # recommended Volaris: nonstop AUS -> CUN
-        self.assertEqual(len(route["layers"][2]["data"]), 1)  # one arrow on that leg
+                         ["ScatterplotLayer", "ArcLayer", "ArcLayer", "ScatterplotLayer"])
+        self.assertEqual([p["label"] for p in route["layers"][3]["data"]], ["Start: AUS · Austin", "End: CUN · Cancún"])
+        legs = route["layers"][2]["data"]
+        self.assertEqual(len(legs), 1)  # recommended Volaris: nonstop AUS -> CUN
+        self.assertEqual((legs[0]["from_color"], legs[0]["to_color"]), ([22, 163, 74], [220, 38, 38]))  # green -> red
+        self.assertEqual(route["layers"][2]["getHeight"], 0.35)  # low arcs, not towers
         self.assertLess(route["initialViewState"]["zoom"], 6)
-        for deck in decks:  # both maps stay flat and north-up
+        self.assertEqual(route["initialViewState"]["pitch"], 30)  # a gentle, fixed 3D tilt
+        self.assertEqual(hotels["initialViewState"].get("pitch", 0), 0)  # hotels stay top-down
+        for deck in decks:  # neither map can be tilted or spun by dragging
             self.assertEqual(deck["views"][0]["controller"], {"dragRotate": False, "touchRotate": False})
-            self.assertEqual(deck["initialViewState"].get("pitch", 0), 0)
         self.assertEqual(len(hotels["layers"][0]["data"]), 3)  # every sample hotel has a location
         text = self.plain_text()
         self.assertIn("Volaris: AUS → CUN (nonstop)", text)
@@ -248,8 +250,8 @@ class AppTripTests(DemoAppCase):
         selector = next(s for s in self.app.selectbox if s.label == "Show the flight path for")
         selector.set_value(2).run()  # American, 1 stop via DFW
         route = json.loads(self.app.get("deck_gl_json_chart")[0].proto.json)
-        self.assertEqual([p["label"] for p in route["layers"][1]["data"]], ["AUS → DFW", "DFW → CUN"])
-        self.assertEqual([p["label"] for p in route["layers"][4]["data"]],
+        self.assertEqual([p["label"] for p in route["layers"][2]["data"]], ["AUS → DFW", "DFW → CUN"])
+        self.assertEqual([p["label"] for p in route["layers"][3]["data"]],
                          ["Start: AUS · Austin", "Layover: DFW · Dallas-Fort Worth", "End: CUN · Cancún"])
         self.assertIn("American: AUS → DFW → CUN (layover in DFW)", self.plain_text())
         self.assertIn("🟢 **Start** AUS · Austin  →  🟡 DFW  →  🔴 **End** CUN", self.plain_text())
