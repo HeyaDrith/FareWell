@@ -4,6 +4,15 @@ Type a budget and destination, pick the flights, hotels, food and activities tha
 see how much you save. Prices come from SerpApi; every pick is tracked in Capital One's
 Nessie sandbox. Built at HackTX 26.
 
+## Pages
+- **Home** (`/`): a dashboard in the style of the Figma design. **Finances** shows the trip's
+  Nessie Budget and Savings accounts, **Travel History** lists trips locked in during this browser
+  session, and **Active Goals** tracks budget use, planning progress and lock-in. With nothing
+  planned yet the cards show empty states, never sample numbers. Tiles open the **Trip Planner**;
+  the **Financial Planner** (weekly Trip Fund transfers) is marked coming soon.
+- **Trip Planner** (`/plan`): everything below. The **Data sources** menu (top right, every page)
+  holds the sample-prices / demo-bank / demo-AI switches.
+
 ## How it works
 1. Enter a **budget**, airports, dates and a hotel search, then click **Start planning**.
    The airport fields are searchable dropdowns (about 4,600 airports): type a city ("cancun",
@@ -129,7 +138,11 @@ python -m unittest discover -s tests -p test_planner.py -v
 ## Who owns what
 | File | Job |
 |---|---|
-| `app.py` | Streamlit UI |
+| `app.py` | Router: shared setup, Data sources menu (demo/live switches), top navigation |
+| `views/home.py` | Homepage dashboard: Finances, Travel History, Active Goals + planner tiles |
+| `views/plan.py` | Trip planner page (hero search, form, budget, map, options, lock-in) |
+| `ui.py` | Theme CSS, beach hero, glass cards (design from the team's Figma) |
+| `.streamlit/config.toml` | Light theme colors and rounded corners |
 | `travel.py` | SerpApi flights + hotels (routes, hotel coordinates), booking/search links, airport lookup |
 | `trip_map.py` | Flight path and hotel maps (pydeck, included with Streamlit) |
 | `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers, not used by the UI) |

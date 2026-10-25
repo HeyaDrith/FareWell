@@ -107,7 +107,7 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
                                 get_source_color=ORIGIN_RGB, get_target_color=DEST_RGB, get_width=4,
                                 great_circle=True, pickable=True)] + _airport_layers(stops)
             view = _view([[s["lon"], s["lat"]] for s in stops], max_zoom=8)
-            st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, tooltip={"text": "{label}"}),
+            st.pydeck_chart(pdk.Deck(layers=layers, map_style="light", initial_view_state=view, tooltip={"text": "{label}"}),
                             height=MAP_HEIGHT)
             layovers = [s["code"] for s in stops[1:-1]]
             st.caption(f"{flight_label}: {' → '.join(s['code'] for s in stops)}"
@@ -125,7 +125,7 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
             if dest:
                 layers += _airport_layers([dest])
                 positions.append([dest["lon"], dest["lat"]])
-            st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=_view(positions, max_zoom=13),
+            st.pydeck_chart(pdk.Deck(layers=layers, map_style="light", initial_view_state=_view(positions, max_zoom=13),
                                      tooltip={"text": "{label}"}), height=MAP_HEIGHT)
             st.caption(f"Hotels near {place}: 🟢 in your trip · 🟡 recommended · ⚪ other options. "
                        "Hover a dot for its price and rating.")

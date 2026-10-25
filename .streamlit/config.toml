@@ -1,0 +1,14 @@
+# Light "beach day" theme to match the Figma design. Fonts and the custom cards are in ui.py.
+[theme]
+base = "light"
+primaryColor = "#0E7CC4"
+backgroundColor = "#F4F8FC"
+secondaryBackgroundColor = "#E4EEF8"
+textColor = "#0B2545"
+linkColor = "#0E7CC4"
+baseRadius = "0.9rem"
+borderColor = "#D3E0EE"
+showWidgetBorder = true
+
+[client]
+toolbarMode = "minimal"

@@ -29,6 +29,8 @@ class DemoAppCase(unittest.TestCase):
         self.addCleanup(network.stop)
         self.addCleanup(self.requests.assert_not_called)
         self.app = AppTest.from_file(str(APP), default_timeout=15).run()
+        self.assertEqual(len(self.app.exception), 0)  # the homepage loads first
+        self.app.switch_page("views/plan.py").run()
         self.click("Start planning")
 
     def click(self, label):
