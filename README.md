@@ -1,6 +1,6 @@
 # ✈️ FareWell
 
-Type a budget and destination, pick the flights, hotels, food and activities that fit, and
+Type a budget and destination, pick the flights, hotels and other expenses that fit, and
 see how much you save. Prices come from SerpApi; every pick is tracked in Capital One's
 Nessie sandbox. Built at HackTX 26.
 
@@ -17,14 +17,17 @@ Nessie sandbox. Built at HackTX 26.
 1. Enter a **budget**, airports, dates and a hotel search, then click **Start planning**.
    The airport fields are searchable dropdowns (about 4,600 airports): type a city ("cancun",
    accents optional) or a code ("DFW") and pick from the list. Choosing a destination fills in
-   the hotel search for that city. A code that isn't listed can still be typed in.
+   the hotel search for that city. Only airports in the list can be chosen; typed text that
+   isn't one of them can't be entered (a chat draft with an unlisted airport is refused too).
 2. Flights and hotels show the **typical price** (median of the results), whether each option
    **fits** what's left of the budget, and how much it **saves** vs. typical.
 3. Each pick becomes a Nessie **purchase** on a "Trip Budget" account. Money saved vs. typical
-   is a Nessie **deposit** into a "Trip Savings" account. Food and activities are added by hand.
+   is a Nessie **deposit** into a "Trip Savings" account. **Other expenses** (food, activities and
+   anything else) are added by hand.
 4. Each flight and hotel list highlights **⭐ Recommended** (best quality that fits that part
    of the budget), **💰 Cheapest** and **✨ Best quality**, with a one-line reason and the upgrade
-   cost. The budget is split 35% flights / 40% hotel / 15% food / 10% activities, and money left
+   cost. The budget is split 35% flights / 40% hotel / 15% food / 10% activities (the last two
+   shown together as Other expenses), and money left
    over in one part rolls into the parts not picked yet. Flight quality = shorter trip and fewer
    stops; hotel quality = guest rating. Food shows a per-day budget.
    Every flight and hotel row has a **View ↗** link (and the hotel's website when Google lists
@@ -44,7 +47,7 @@ Nessie sandbox. Built at HackTX 26.
      open-source fast-flights project); the app shows the flight number and departure time so the
      user can tap the matching listing. SerpApi has no plain booking URL for flights: its booking step
      (`booking_token`) returns a form post to Google and costs extra searches per flight.
-   - **Food/activities:** "Open in Google Maps". **Sample data** isn't real listings, so its buttons
+   - **Other expenses:** "Open in Google Maps". **Sample data** isn't real listings, so its buttons
      open a matching search. The hotel page link still needs a check with a live SerpApi key.
 6. **🔒 Lock in my trip** freezes the picks and shows a confirmation number and summary. This is a
    **demo confirmation**: nothing is reserved or charged. **Unlock to make changes** reopens it.
@@ -75,7 +78,8 @@ and disagreements are shown instead of silently treating them as group agreement
 
 To try it without credentials:
 1. Install the updated requirements (works on Python 3.10 through 3.12).
-2. Open **Turn our group chat into a trip**.
+2. Click **💬 Paste your group chat** on the Trip Planner (or the homepage's group-chat link)
+   to open **Plan from your group chat**.
 3. Select **Load example draft (no API)**. This is a fixed example, not AI analysis.
 4. Edit the draft, check the review confirmation, and select **Apply reviewed draft**.
 5. Select **Start planning** in the normal trip form, then pick your options.

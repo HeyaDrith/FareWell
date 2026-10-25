@@ -1,6 +1,6 @@
 """Trip planner page: budget and destination in, the trip that fits out, tracked in Nessie.
 
-Flow: 1. Your trip (hero search + form) → 2. Pick options (map, flights, hotels, food) →
+Flow: 1. Your trip (hero search + form) → 2. Pick options (map, flights, hotels, other expenses) →
 3. Lock it in. Rendered by app.py through st.navigation.
 """
 import os
@@ -50,13 +50,16 @@ for key, default in {
     "trip_return": date.today() + timedelta(days=97),
 }.items():
     ss.setdefault(key, default)
-# Searchable airport dropdowns: type a city or code and the list filters as you type.
+# Searchable airport dropdowns: type a city or code and the list filters as you type. Only
+# airports in the list can be chosen; anything else is cleared so the field asks again.
 airports = travel.airport_codes()
+known = set(airports)
+# Match typed text as-is inside "CUN · Cancún (Cancun)": "ca" or "dal" list matches, while a
+# made-up code like "XYZ" lists nothing (the default fuzzy filter showed XRY, XFN for it).
+AIRPORT_FILTER = "contains"
 for key in ("trip_origin", "trip_destination"):
     code = (ss.get(key) or "").strip().upper()
-    ss[key] = code or None
-    if code and code not in airports:  # e.g. a smaller airport typed in or from a Gemini draft
-        airports = [code] + airports
+    ss[key] = code if code in known else None
 
 
 def follow_destination():
@@ -85,24 +88,33 @@ ui.steps(3 if locked_now else 2 if has_trip else 1, {1, 2, 3} if locked_now else
 
 # Optional: turn a group chat or screenshot into reviewed trip details (Gemini). It runs before
 # the trip widgets exist, because applying a draft writes their values into session state.
+if st.query_params.get("start") == "chat":  # the homepage's "Paste your group chat" link
+    draft_ui.open_panel()
+    del st.query_params["start"]  # once only, so closing the panel sticks
 draft_ui.render_draft_panel(demo_ai)
 
 with hero:  # filled in after the draft panel, but shown inside the hero above it
     ss.hero_destination = ss.get("trip_destination")  # mirror the form's To field
     st.selectbox("Where to?", airports, index=None, key="hero_destination", format_func=travel.airport_label,
-                 accept_new_options=True, placeholder="🔍  Search for a destination…",
+                 placeholder="🔍  Search for a destination…", filter_mode=AIRPORT_FILTER,
                  label_visibility="collapsed", on_change=from_hero_search)
+    # Two ways to start: the form below, or the group-chat panel (opens in place).
+    st.html("<div class='ts-hero-sub ts-hero-or'>How do you want to start?</div>")
+    fill, chat = st.columns(2)
+    fill.button("✍️ Fill in the details", key="start_form", on_click=draft_ui.close_panel, use_container_width=True)
+    chat.button("💬 Paste your group chat", key="start_chat", on_click=draft_ui.open_panel, use_container_width=True)
 
 # ---- 1. Trip details ----
 with st.container(key="card-trip"):
     st.header("1. Your trip")
     budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
     c1, c2 = st.columns(2)
+    # No accept_new_options: only airports in the list can be picked, never free text.
     origin = (c1.selectbox("From", airports, index=None, key="trip_origin", format_func=travel.airport_label,
-                           accept_new_options=True, placeholder="Type a city or airport code")
+                           placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER)
               or "").strip().upper()
     dest = (c2.selectbox("To", airports, index=None, key="trip_destination", format_func=travel.airport_label,
-                         accept_new_options=True, placeholder="Type a city or airport code",
+                         placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER,
                          on_change=follow_destination) or "").strip().upper()
     depart = c1.date_input("Depart", value=None, key="trip_depart")
     ret = c2.date_input("Return", value=None, key="trip_return")
@@ -188,9 +200,11 @@ with st.container(key="card-budget"):
         st.error(f"You're {money(-remaining)} over budget. Remove something or pick a cheaper option.")
     if summary["picks"]:
         draft_ui.render_planning_notes(search_fields, summary["final_total"])
-    split = [f"{label} {money(allowance[c])}" for c, label in
-             (("Flight", "✈️ Flights"), ("Hotel", "🏨 Hotel"), ("Food", "🍽️ Food"), ("Activity", "🎟️ Activities"))
+    split = [f"{label} {money(allowance[c])}" for c, label in (("Flight", "✈️ Flights"), ("Hotel", "🏨 Hotel"))
              if c not in picked]
+    other = [c for c in ("Food", "Activity") if c not in picked]  # shown together, like their section below
+    if other:
+        split.append(f"🧾 Other expenses {money(sum(allowance[c] for c in other))}")
     if split and not summary["over_budget"]:
         st.caption("Suggested split of what's left: " + " · ".join(split)
                    + (f" (food ≈ {money(allowance['Food'] / days)}/day)" if "Food" not in picked else ""))
@@ -391,9 +405,9 @@ if hotels:
                               lambda h=h, saved=saved: add("Hotel", h["name"], h["total"], saved, hotel_buttons(h)))
 
 with st.container(key="card-food"):
-    st.subheader("Food & activities")
-    if "Food" not in picked:
-        st.caption(f"Food budget ≈ {money(allowance['Food'] / days)}/day for {days} days.")
+    st.subheader("Other expenses")
+    st.caption("Food, activities and anything else you'll pay for on the trip."
+               + (f" Food budget ≈ {money(allowance['Food'] / days)}/day for {days} days." if "Food" not in picked else ""))
     with st.form("extra", clear_on_submit=True, border=False):
         a, b, c = st.columns([2, 4, 2])
         category = a.selectbox("Type", ["Food", "Activity", "Other"])
@@ -407,7 +421,7 @@ with st.container(key="card-food"):
 with st.container(key="card-summary"):
     st.header("4. Your trip")
     if not summary["picks"]:
-        st.caption("Nothing added yet. Pick a flight, hotel or activity above.")
+        st.caption("Nothing added yet. Pick a flight, hotel or other expense above.")
     for p in summary["picks"]:
         a, b, c = st.columns([5, 3, 1], vertical_alignment="center")
         a.markdown(f"{p['category']}: {esc(p['description'])}")

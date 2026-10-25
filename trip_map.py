@@ -14,6 +14,21 @@ ARC_HEIGHT = 0.35  # arcs rise to about a third of deck.gl's default, so long le
 ROUTE_PITCH = 30   # a fixed, gentle tilt gives the route map its 3D look
 # North-up maps that can't be tilted or spun by dragging, so a route never ends up skewed.
 _FLAT_VIEW = pdk.View(type="MapView", controller={"dragRotate": False, "touchRotate": False}, repeat=True)
+# Hover cards: the markup lives here and each point fills in plain-text fields, which
+# Streamlit escapes, so a hotel name containing HTML shows as text.
+_TOOLTIP = {"html": "<b>{title}</b><div>{detail}</div><div>{rating}</div>"
+                    "<div style='color: {tone}; font-weight: 600'>{note}</div>",
+            "style": {"backgroundColor": "white", "color": "#1f2937", "fontSize": "13px",
+                      "lineHeight": "1.45", "padding": "8px 10px", "borderRadius": "8px",
+                      "boxShadow": "0 2px 8px rgba(15, 23, 42, 0.18)"}}
+_HOTEL_STATUS = {"picked": ("#16a34a", "In your trip"), "recommended": ("#b45309", "⭐ Recommended"),
+                 "": ("#64748b", "Other option")}
+MAP_VIEWS = ["✈️ Flight path", "🏨 Hotels on the map"]
+
+
+def _card(title: str, detail: str = "", rating: str = "", note: str = "", tone: str = "#1f2937") -> dict:
+    """Hover-card fields for one point (every pickable point needs all of them)."""
+    return {"title": title, "detail": detail, "rating": rating, "note": note, "tone": tone}
 
 
 def flight_path(route: list[str], origin: str, dest: str) -> list[dict]:
@@ -52,9 +67,13 @@ def hotel_points(hotels: list[dict], dest: dict | None, picked: set[str], recomm
             continue
         status = "picked" if h["name"] in picked else "recommended" if h["name"] == recommended else ""
         color = {"picked": PICKED_RGB, "recommended": RECOMMENDED_RGB}.get(status, HOTEL_RGB)
+        tone, word = _HOTEL_STATUS[status]
+        nightly = f" · ${h['per_night']:,.0f}/night" if h.get("per_night") is not None else ""
         points.append({"position": [lon, lat], "color": color, "status": status,
                        "label": f"{h['name']} · ${h['total']:,.0f} total · {h['rating']}★"
-                                + {"picked": " · in your trip", "recommended": " · recommended"}.get(status, "")})
+                                + {"picked": " · in your trip", "recommended": " · recommended"}.get(status, ""),
+                       **_card(str(h["name"]), f"${h['total']:,.0f} total{nightly}", f"{h['rating']}★ rating",
+                               word, tone)})
     return points
 
 
@@ -113,6 +132,7 @@ def route_geometry(stops: list[dict]) -> dict:
         positions.append([lon, s["lat"]])
     last = len(stops) - 1
     legs = [{"from": positions[i], "to": positions[i + 1], "label": f"{a['code']} → {b['code']}",
+             **_card(f"{a['code']} → {b['code']}"),
              "from_color": _stop_color(i, last), "to_color": _stop_color(i + 1, last)}
             for i, (a, b) in enumerate(zip(stops, stops[1:]))]
     return {"positions": positions, "legs": legs}
@@ -127,7 +147,8 @@ def _airport_layers(stops: list[dict], positions: list[list[float]] | None = Non
         role = "End" if i == last else "Start" if i == 0 else "Layover"
         rows.append({"position": pos, "code": s["code"], "role": role,
                      "color": {"Start": ORIGIN_RGB, "End": DEST_RGB}.get(role, LAYOVER_RGB),
-                     "label": f"{role}: {s['code']} · {s['city']}"})
+                     "label": f"{role}: {s['code']} · {s['city']}",
+                     **_card(f"{role}: {s['code']}", s["city"])})
     ends = [dict(r, color=r["color"] + [70]) for r in rows if r["role"] != "Layover"]
     # Sizes are pinned in screen pixels with min = max on a 1 m radius (radiusUnits "pixels"
     # isn't applied through Streamlit, which made markers balloon when zoomed in).
@@ -142,9 +163,13 @@ def _airport_layers(stops: list[dict], positions: list[list[float]] | None = Non
 
 
 def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], place: str):
-    """Two tabs: the selected flight's path, and the hotels around the destination."""
-    path_tab, hotel_tab = st.tabs(["✈️ Flight path", "🏨 Hotels on the map"])
-    with path_tab:
+    """A toggle between the selected flight's path and the hotels around the destination.
+
+    Only the chosen map is drawn: a map built inside a hidden tab never picks up the mouse,
+    so its hover cards never showed.
+    """
+    view_name = st.radio("Map", MAP_VIEWS, horizontal=True, key="map_view", label_visibility="collapsed")
+    if view_name == MAP_VIEWS[0]:
         if not stops:
             st.caption("No map for this route: one of the airports isn't in the airport list.")
         else:
@@ -165,7 +190,7 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
             # Tilted views show more map toward the horizon; zoom out a touch so both ends fit.
             view.pitch, view.zoom = ROUTE_PITCH, max(1.0, round(view.zoom - 0.35, 2))
             st.pydeck_chart(pdk.Deck(layers=layers, views=[_FLAT_VIEW], map_style="light", initial_view_state=view,
-                                     tooltip={"text": "{label}"}), height=MAP_HEIGHT)
+                                     tooltip=_TOOLTIP), height=MAP_HEIGHT)
             layovers = [s["code"] for s in stops[1:-1]]
             start, end = stops[0], stops[-1]
             st.caption(f"{flight_label}: {' → '.join(s['code'] for s in stops)}"
@@ -174,7 +199,7 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
                        + (f"  →  🟡 {', '.join(layovers)}" if layovers else "")
                        + f"  →  🔴 **End** {end['code']} · {esc_md(end['city'])}. "
                        "Each arc fades from where it leaves to where it lands.")
-    with hotel_tab:
+    else:
         if not hotels_on_map:
             st.caption("No hotel locations to show for this search.")
         else:
@@ -189,6 +214,6 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
                 positions.append([dest["lon"], dest["lat"]])
             st.pydeck_chart(pdk.Deck(layers=layers, views=[_FLAT_VIEW], map_style="light",
                                      initial_view_state=_view(positions, max_zoom=13),
-                                     tooltip={"text": "{label}"}), height=MAP_HEIGHT)
+                                     tooltip=_TOOLTIP), height=MAP_HEIGHT)
             st.caption(f"Hotels near {place}: 🟢 in your trip · 🟡 recommended · ⚪ other options. "
                        "Hover a dot for its price and rating.")

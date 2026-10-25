@@ -97,7 +97,7 @@ class RecommendationTests(unittest.TestCase):
     def test_budget_split_and_rollover(self):
         self.assertEqual([planner.category_allowance(c, 1500) for c in ("Flight", "Hotel", "Food", "Activity")],
                          [525.0, 600.0, 225.0, 150.0])
-        # $438 flight picked: the $1,062 left is split among hotel, food and activities.
+        # $438 flight picked: the $1,062 left is split among hotel, food and activities (shown together as Other expenses).
         self.assertEqual(planner.category_allowance("Hotel", 1062, {"Flight"}), 653.54)
         self.assertEqual(planner.category_allowance("Hotel", 0), 0.0)
         self.assertEqual(planner.category_allowance("Other", 1000), 0.0)

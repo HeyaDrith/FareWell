@@ -65,6 +65,9 @@ else:
 
 with st.container(key="hero-home"):
     st.html(f"<div class='ts-glass-row'>{finances}{travel_history}{active}</div>")
+    # Opens the Trip Planner with the group-chat panel already open.
+    st.page_link("views/plan.py", label="Paste your group chat → get a trip draft", icon="💬",
+                 query_params={"start": "chat"})
 
 st.write("")
 trip_tile, fin_tile = st.columns(2, gap="large")

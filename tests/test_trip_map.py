@@ -95,6 +95,16 @@ class HotelPointTests(unittest.TestCase):
         self.assertEqual([p["color"] for p in points],
                          [trip_map.PICKED_RGB, trip_map.RECOMMENDED_RGB, trip_map.HOTEL_RGB])
         self.assertTrue(points[0]["label"].endswith("in your trip"))
+        self.assertEqual([p["note"] for p in points], ["In your trip", "⭐ Recommended", "Other option"])
+
+    def test_hover_card_fields_are_plain_text(self):
+        hotel = dict(self.hotel("<b>Bold</b> Inn", 21.1, -86.8), per_night=90.0)
+        (point,) = trip_map.hotel_points([hotel], None, picked=set(), recommended=None)
+        # Streamlit escapes these values, so the markup stays in the card template only.
+        self.assertEqual((point["title"], point["detail"], point["rating"]),
+                         ("<b>Bold</b> Inn", "$630 total · $90/night", "4.4★ rating"))
+        for name in ("title", "detail", "rating", "note", "tone"):
+            self.assertIn("{" + name + "}", trip_map._TOOLTIP["html"])
 
 
 if __name__ == "__main__":
