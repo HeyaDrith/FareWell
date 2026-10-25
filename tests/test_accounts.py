@@ -52,6 +52,8 @@ class StorageTests(TempStoreMixin, unittest.TestCase):
             self.assertEqual(sent["json"]["data"], {"x": 1})
             self.assertIn("merge-duplicates", sent["headers"]["Prefer"])
         self.assertIn("Authorization", accounts.SupabaseStore("https://a.co", "eyJlegacy").headers)
+        for pasted in ("https://abc.supabase.co/rest/v1/", "https://abc.supabase.co/rest/v1", " https://abc.supabase.co "):
+            self.assertEqual(accounts.SupabaseStore(pasted, "k").endpoint, "https://abc.supabase.co/rest/v1/farewell_users")
         reply.json.return_value = []
         with patch("requests.request", return_value=reply):
             self.assertIsNone(store.load("new-user"))

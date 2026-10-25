@@ -218,7 +218,9 @@ class SupabaseStore:
     label = "your account"
 
     def __init__(self, url: str, key: str):
-        self.endpoint = url.rstrip("/") + f"/rest/v1/{TABLE}"
+        base = url.strip().rstrip("/")
+        base = base.removesuffix("/rest/v1")  # a Project URL copied with its API path still works
+        self.endpoint = base + f"/rest/v1/{TABLE}"
         self.headers = {"apikey": key, "Content-Type": "application/json"}
         if key.startswith("eyJ"):  # legacy JWT keys also go in Authorization; new sb_secret_ keys must not
             self.headers["Authorization"] = f"Bearer {key}"
