@@ -248,6 +248,11 @@ def _render_review(draft: trip_draft.TripDraft):
     except (ValidationError, ValueError):
         st.warning("Use three-letter airport codes, a positive budget up to 1,000,000, and up to eight short preferences.")
         return
+    # The trip form only takes airports from its list, so a draft can't bring in any other.
+    unknown = [code for code in (reviewed.origin, reviewed.destination) if not travel.airport_location(code)]
+    if unknown:
+        st.warning(f"{', '.join(unknown)} isn't in the airport list. Use an airport from the From/To lists.")
+        return
     # Only this explicit submission writes into the manual form; no search/funding side effects.
     st.session_state.update(fields)
     st.session_state.confirmed_trip_notes = reviewed.model_dump(mode="json")

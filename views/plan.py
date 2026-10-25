@@ -50,13 +50,16 @@ for key, default in {
     "trip_return": date.today() + timedelta(days=97),
 }.items():
     ss.setdefault(key, default)
-# Searchable airport dropdowns: type a city or code and the list filters as you type.
+# Searchable airport dropdowns: type a city or code and the list filters as you type. Only
+# airports in the list can be chosen; anything else is cleared so the field asks again.
 airports = travel.airport_codes()
+known = set(airports)
+# Match typed text as-is inside "CUN · Cancún (Cancun)": "ca" or "dal" list matches, while a
+# made-up code like "XYZ" lists nothing (the default fuzzy filter showed XRY, XFN for it).
+AIRPORT_FILTER = "contains"
 for key in ("trip_origin", "trip_destination"):
     code = (ss.get(key) or "").strip().upper()
-    ss[key] = code or None
-    if code and code not in airports:  # e.g. a smaller airport typed in or from a Gemini draft
-        airports = [code] + airports
+    ss[key] = code if code in known else None
 
 
 def follow_destination():
@@ -93,7 +96,7 @@ draft_ui.render_draft_panel(demo_ai)
 with hero:  # filled in after the draft panel, but shown inside the hero above it
     ss.hero_destination = ss.get("trip_destination")  # mirror the form's To field
     st.selectbox("Where to?", airports, index=None, key="hero_destination", format_func=travel.airport_label,
-                 accept_new_options=True, placeholder="🔍  Search for a destination…",
+                 placeholder="🔍  Search for a destination…", filter_mode=AIRPORT_FILTER,
                  label_visibility="collapsed", on_change=from_hero_search)
     # Two ways to start: the form below, or the group-chat panel (opens in place).
     st.html("<div class='ts-hero-sub ts-hero-or'>How do you want to start?</div>")
@@ -106,11 +109,12 @@ with st.container(key="card-trip"):
     st.header("1. Your trip")
     budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
     c1, c2 = st.columns(2)
+    # No accept_new_options: only airports in the list can be picked, never free text.
     origin = (c1.selectbox("From", airports, index=None, key="trip_origin", format_func=travel.airport_label,
-                           accept_new_options=True, placeholder="Type a city or airport code")
+                           placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER)
               or "").strip().upper()
     dest = (c2.selectbox("To", airports, index=None, key="trip_destination", format_func=travel.airport_label,
-                         accept_new_options=True, placeholder="Type a city or airport code",
+                         placeholder="Type a city or airport code, then pick it", filter_mode=AIRPORT_FILTER,
                          on_change=follow_destination) or "").strip().upper()
     depart = c1.date_input("Depart", value=None, key="trip_depart")
     ret = c2.date_input("Return", value=None, key="trip_return")

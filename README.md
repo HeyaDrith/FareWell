@@ -17,7 +17,8 @@ Nessie sandbox. Built at HackTX 26.
 1. Enter a **budget**, airports, dates and a hotel search, then click **Start planning**.
    The airport fields are searchable dropdowns (about 4,600 airports): type a city ("cancun",
    accents optional) or a code ("DFW") and pick from the list. Choosing a destination fills in
-   the hotel search for that city. A code that isn't listed can still be typed in.
+   the hotel search for that city. Only airports in the list can be chosen; typed text that
+   isn't one of them can't be entered (a chat draft with an unlisted airport is refused too).
 2. Flights and hotels show the **typical price** (median of the results), whether each option
    **fits** what's left of the budget, and how much it **saves** vs. typical.
 3. Each pick becomes a Nessie **purchase** on a "Trip Budget" account. Money saved vs. typical

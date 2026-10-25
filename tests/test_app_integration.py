@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
 import bank
+import travel
 from app_support import DemoAppCase
 
 
@@ -383,8 +384,19 @@ class AppTripTests(DemoAppCase):
         self.assertEqual(self.app.selectbox(key="hero_destination").value, "MIA")
         self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in Miami")
 
-    def test_typed_airport_code_is_uppercased_and_empty_stays_empty(self):
-        # Typed text arrives as the widget value (accept_new_options); codes are uppercased.
+    def test_only_listed_airports_can_be_chosen(self):
+        listed = [travel.airport_label(code) for code in travel.airport_codes()]
+        for key in ("hero_destination", "trip_origin", "trip_destination"):
+            box = self.app.selectbox(key=key)
+            self.assertFalse(box.proto.accept_new_options)  # typed text can't become a new option
+            self.assertEqual(box.options, listed)  # nothing outside the airport list
+            # Substring matching, not fuzzy: a made-up code like "XYZ" lists no airports.
+            self.assertEqual(box.proto.DESCRIPTOR.fields_by_name["filter_mode"].enum_type
+                             .values_by_number[box.proto.filter_mode].name, "FILTER_MODE_CONTAINS")
+        self.assertEqual([label for label in listed if "xyz" in label.lower()], [])
+        self.assertTrue(any("dal" in label.lower() for label in listed))  # a city prefix still matches
+
+    def test_airport_code_is_uppercased_and_empty_stays_empty(self):
         self.app.session_state["trip_origin"] = "dfw"
         self.app.run()
         self.assertEqual(self.app.selectbox(key="trip_origin").value, "DFW")

@@ -96,6 +96,10 @@ class AppDraftTests(DemoAppCase):
         self.app.text_input(key="draft_review_origin").set_value("123")
         self.click("Apply reviewed draft")
         self.assertIn("three-letter airport codes", self.visible_text())
+        self.app.text_input(key="draft_review_origin").set_value("ZZZ")  # three letters, but no such airport
+        self.click("Apply reviewed draft")
+        self.assertIn("ZZZ isn't in the airport list", self.visible_text())
+        self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
         self.app.text_input(key="draft_review_origin").set_value("LAX")
         self.app.selectbox(key="draft_review_scope").select("unknown")
         self.click("Apply reviewed draft")
