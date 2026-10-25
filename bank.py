@@ -44,6 +44,26 @@ def _demo_account(account_id: str) -> tuple[dict, str]:
     return _DEMO[group], kind
 
 
+def demo_balances(checking_id: str) -> dict | None:
+    """{"checking", "fund"} of a demo Trip Fund pair, or None if it isn't in memory (for saving)."""
+    group = str(checking_id).rpartition("-")[0]
+    with _DEMO_LOCK:
+        account = _DEMO.get(group)
+        return dict(account) if account else None
+
+
+def restore_demo_accounts(checking_id: str, fund_id: str, checking: float, fund: float) -> None:
+    """Put a saved demo Trip Fund pair back after a server restart (never overwrites a live one)."""
+    group, _, kind = str(checking_id).rpartition("-")
+    if not group.startswith("demo-") or kind != "checking" or fund_id != f"{group}-fund":
+        raise ValueError("Saved demo accounts don't match.")
+    values = [float(checking), float(fund)]
+    if not all(math.isfinite(v) and v >= 0 for v in values):
+        raise ValueError("Saved demo balances are invalid.")
+    with _DEMO_LOCK:
+        _DEMO.setdefault(group, {"checking": values[0], "fund": values[1]})
+
+
 def _amount(amount: float) -> Decimal:
     try:
         value = Decimal(str(amount))

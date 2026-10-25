@@ -141,6 +141,31 @@ python -m unittest discover -s tests -p test_planner.py -v
 - The weekly Trip Fund functions (`setup_accounts`, `get_balance`, `transfer`) and the deadline
   helpers in `planner.py` are unchanged and still tested, ready for a later "save for it" step.
 
+## Accounts: sign in and keep your trips
+Accounts are optional; everyone can plan without one. The **user icon** in the top-right corner
+opens the **Account** page, where people **create an account** or **sign in** with an email and
+password. Signed in, their **locked trips** (Travel History) and **Trip Funds** (demo balances
+included) are saved automatically and come back on any device, even after a server restart.
+
+- Passwords are stored only as salted **scrypt** hashes. Wrong sign-ins get one message whether
+  the email or the password was wrong, and 5 failures pause that email for 5 minutes.
+- Signing in lasts while the browser tab is open (refreshing the page signs you out).
+- There's no password reset or email verification yet.
+- If saved data can't be loaded, the app never saves over it.
+
+**Where accounts are stored:** set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (Streamlit secrets or
+`.env`) to use Supabase. Without them, accounts go to `.farewell_accounts.db` on the server: fine
+locally, but on Streamlit Cloud that file is wiped whenever the app restarts or redeploys.
+
+Supabase setup (about 10 minutes): create a free project, open **SQL Editor** and run
+`supabase_setup.sql`, then copy the Project URL and the secret (service_role) key from
+**Project Settings > API** into the secrets.
+
+Optional **Continue with Google** button: add the `[auth]` block from
+`.streamlit/secrets.toml.example` with a Google OAuth client whose redirect URI is
+`https://farewell-hacktx.streamlit.app/oauth2callback` (and `http://localhost:8501/oauth2callback`
+for local runs).
+
 ## Who owns what
 | File | Job |
 |---|---|
@@ -152,6 +177,9 @@ python -m unittest discover -s tests -p test_planner.py -v
 | `travel.py` | SerpApi flights + hotels (routes, hotel coordinates), booking/search links, airport lookup |
 | `trip_map.py` | Flight path and hotel maps (pydeck, included with Streamlit) |
 | `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers used by the Financial Planner) |
+| `accounts.py` | Accounts (email + password, optional Google) and per-user saving (Supabase, or a local file) |
+| `views/account.py` | Account page (sign in, create account, saved trips), opened from the top-right user icon |
+| `supabase_setup.sql` | The one table saved accounts use (run once in Supabase) |
 | `planner.py` | Typical price, savings, budget split and Recommended/Cheapest/Best quality (+ weekly savings math) |
 
 ## Trip Fund transfer contract (kept in `bank.py`, used by the Financial Planner)

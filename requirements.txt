@@ -7,3 +7,4 @@ google-genai==2.33.0
 pydantic==2.14.1
 Pillow==12.3.0
 pydeck==0.9.3
+Authlib==1.9.1  # Streamlit's st.login (Google sign-in)

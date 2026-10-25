@@ -5,6 +5,7 @@ import os
 
 import streamlit as st
 
+import accounts
 import bank
 import funding
 import ui
@@ -179,6 +180,11 @@ with right.container(key="card-fund-history"):
         st.dataframe(fund["history"][::-1], hide_index=True, width="stretch")
     else:
         st.caption("Your first contribution starts the story.")
-st.caption("Funds and history belong to this browser session. Demo balances reset when the server restarts. Demo and Nessie funds stay separate when switching data sources.")
+if accounts.current_user():
+    st.caption("Your Trip Funds and history are saved to your account, demo balances included. "
+               "Demo and Nessie funds stay separate when switching data sources.")
+else:
+    st.caption("Funds and history belong to this browser session (sign in to keep them). Demo balances "
+               "reset when the server restarts. Demo and Nessie funds stay separate when switching data sources.")
 st.page_link("views/plan.py", label="Back to your trip", icon=":material/flight_takeoff:")
 ui.powered_by()

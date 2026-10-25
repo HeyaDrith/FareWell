@@ -29,7 +29,8 @@ class HomePageTests(DemoAppCase):
         self.assertIn("Stay on budget", html)
         self.assertIn("2/4", html)  # flight + hotel of the four parts
         self.assertEqual([p.proto.label for p in self.app.get("page_link")],
-                         ["Paste your group chat → get a trip draft", "Continue planning", "Grow your Trip Fund"])
+                         ["Account", "Paste your group chat → get a trip draft", "Continue planning",
+                          "Grow your Trip Fund"])  # "Account" is the top-right user icon
 
         self.app.switch_page("views/plan.py").run()
         self.click("🔒 Lock in my trip")
@@ -81,7 +82,8 @@ class FreshHomePageTests(unittest.TestCase):
             self.assertIn(empty, html)
         self.assertNotIn("$", html.split("ts-powered")[0].split("<style>")[0])  # no made-up amounts
         self.assertEqual([p.proto.label for p in app.get("page_link")],
-                         ["Paste your group chat → get a trip draft", "Start a trip", "Grow your Trip Fund"])
+                         ["Account", "Paste your group chat → get a trip draft", "Start a trip",
+                          "Grow your Trip Fund"])  # "Account" is the top-right user icon
         self.assertEqual([t.label for t in app.toggle][:2],
                          ["Sample travel prices (no SerpApi calls)", "Demo bank (no Nessie calls)"])
 

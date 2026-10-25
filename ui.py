@@ -160,6 +160,11 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 [data-testid="stDeckGlJsonChart"] canvas { border-radius: 14px; }
 .deck-tooltip img[src=""] { display: none !important; }
 
+/* The user icon in the top-right corner (opens the Account page) */
+.st-key-account-link [data-testid="stPageLink"] a { background: #FFFFFF; border: 1px solid var(--ts-line);
+  border-radius: 999px; padding: 4px 12px; justify-content: center; box-shadow: 0 4px 12px rgba(11, 37, 69, 0.08); }
+.st-key-account-link [data-testid="stPageLink"] a:hover { border-color: var(--ts-ocean); }
+
 /* Beach heroes */
 .st-key-hero-home, .st-key-hero-plan, .st-key-hero-fund { position: relative; border-radius: 28px; overflow: hidden;
   background: linear-gradient(180deg, rgba(11, 37, 69, 0.10), rgba(11, 37, 69, 0.28)), url("BEACH") center / cover no-repeat;

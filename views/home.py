@@ -1,10 +1,12 @@
 """Homepage dashboard: finances, travel history and goals from this session, plus the planners.
 
-Every number comes from the trip in progress (Nessie or demo money) or trips locked in during
-this browser session; with nothing planned yet the cards say so instead of showing samples.
+Every number comes from the trip in progress (Nessie or demo money) or locked-in trips (this
+browser session, or saved to a signed-in user's account); with nothing planned yet the cards say
+so instead of showing samples.
 """
 import streamlit as st
 
+import accounts
 import bank
 import ui
 
@@ -36,7 +38,7 @@ else:
                         ui.empty("No trip budget yet",
                                  "Start planning a trip and its Budget and Savings accounts show up here."))
 
-# ---- Travel history: trips locked in this session ----
+# ---- Travel history: trips locked in this session, or saved to the signed-in user's account ----
 if history:
     total = sum(t["total"] for t in history)
     rows = "".join(ui.line(t["place"] or t["route"], ui.dollars(t["total"]), f"{t['route']} · {t['dates']}")
@@ -45,7 +47,8 @@ if history:
                               f"{len(history)} trip{'s' * (len(history) != 1)} · {ui.dollars(total, cents=True)}", rows)
 else:
     travel_history = ui.glass("Travel History", "Locked-in trips", "0 trips",
-                              ui.empty("No trips yet", "Lock in a trip and it lands here with its confirmation."))
+                              ui.empty("No trips yet", "Lock in a trip and it lands here with its confirmation."
+                                       + ("" if accounts.current_user() else " Sign in to keep your trips.")))
 
 # ---- Active goals: progress on the trip in progress ----
 if summary:
