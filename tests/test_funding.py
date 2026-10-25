@@ -29,11 +29,41 @@ class FundingTests(unittest.TestCase):
         self.assertEqual([r['Contribution ($)'] for r in funding.plan(fund, 10, TODAY)], [45, 45])
         funding.contribute(fund, TODAY, amount=50)  # more than planned: the last week only needs $40
         self.assertEqual([r['Contribution ($)'] for r in funding.plan(fund, 60, TODAY)], [40])
-        for bad in (0, 2.5, float('nan'), 41):  # 41 is more than the $40 still to save
+        for bad in (0, 2.5, float('nan')):
             with self.subTest(amount=bad), self.assertRaises(ValueError):
                 funding.contribute(fund, TODAY, amount=bad)
         self.assertEqual(funding.balances(fund), (2940, 60))  # nothing moved for the rejected amounts
         self.assertIsNone(fund['pending'])
+
+    def test_live_fund_keeps_its_limits(self):
+        fund = funding.create(100, TODAY + timedelta(days=21), True, TODAY)
+        fund['demo'] = False
+        with patch('funding.balances', return_value=(3000, 60)), patch('bank.transfer') as transfer:
+            with self.assertRaises(ValueError):
+                funding.contribute(fund, TODAY, amount=41)  # more than the $40 still to save
+        with patch('funding.balances', return_value=(3000, 100)), patch('bank.transfer') as transfer:
+            with self.assertRaises(ValueError):
+                funding.contribute(fund, TODAY, amount=50)  # funded: no extra weeks outside a demo
+        transfer.assert_not_called()
+        with self.assertRaises(ValueError):
+            funding.add_demo_money(fund)
+
+    def test_demo_has_no_limits_so_weeks_can_be_simulated(self):
+        fund = funding.create(100, TODAY + timedelta(days=7), True, TODAY)
+        funding.contribute(fund, TODAY, amount=500)  # more than the target
+        self.assertEqual(funding.balances(fund), (2500, 500))
+        for week in range(1, 6):  # past the goal and the deadline: one simulated week each
+            funding.contribute(fund, TODAY, amount=500)
+            self.assertEqual(fund['history'][-1]['Date'], TODAY + timedelta(days=7 * week))
+        self.assertEqual(funding.balances(fund), (0, 3000))
+        with self.assertRaises(ValueError):
+            funding.contribute(fund, TODAY, amount=1)  # checking is empty...
+        funding.add_demo_money(fund)  # ...until a simulated paycheck arrives
+        funding.contribute(fund, TODAY, amount=1000)
+        self.assertEqual(funding.balances(fund), (0, 4000))
+        self.assertEqual(len(fund['history']), 7)
+        with self.assertRaises(ValueError):
+            funding.contribute(fund, TODAY)  # an extra week needs an amount; there's no plan to follow
 
     def test_custom_amount_needs_the_money_in_checking(self):
         fund = funding.create(5000, TODAY + timedelta(days=70), True, TODAY)
@@ -120,8 +150,19 @@ class FundingPageTests(DemoAppCase):
         self.click("Run this week's transfer")
         self.assertEqual(self.metrics()['Funded'], '$1,500.00')
         self.app.run()
-        self.assertEqual(self.metrics()['Funded'], '$1,500.00')
-        self.assertTrue(next(b for b in self.app.button if b.label == "Run this week's transfer").disabled)
+        self.assertEqual(self.metrics()['Funded'], '$1,500.00')  # a rerun never transfers again
+        # Demo: the plan is done, but deposits can keep simulating weeks.
+        self.assertIn('keep depositing to simulate more weeks', '\n'.join(c.value for c in self.app.caption))
+        self.click("Run this week's transfer")
+        self.assertEqual(self.metrics()['Funded'], '$1,550.00')  # the extra-week amount starts at $50
+
+    def test_page_adds_demo_money_when_checking_runs_low(self):
+        self.open_fund()
+        self.app.number_input(key='fund_target_demo').set_value(5000).run()
+        self.click('Create Trip Fund')
+        self.assertIn('Add demo money below', self.visible_text())
+        self.click('💵 Add \\$1,000 demo money to checking')
+        self.assertIn('checking \\$4,000.00', self.visible_text())
 
     def test_bank_mode_switch_keeps_demo_fund_isolated(self):
         self.open_fund()

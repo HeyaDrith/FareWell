@@ -53,7 +53,11 @@ def plan_after(fund, saved, amount, today=None):
 
 def contribute(fund, today=None, amount=None):
     """Move this week's contribution: the planned amount, or `amount` (whole dollars) when the
-    person chose to put in less or more this week."""
+    person chose to put in less or more this week.
+
+    Demo funds have no limits, so a demo can simulate as many weeks as it likes: any amount,
+    and deposits keep going (one simulated week each) after the goal or the deadline.
+    """
     today = today or date.today()
     if fund["pending"]:
         raise bank.BankError("A previous transfer needs reconciliation before another contribution.")
@@ -61,13 +65,16 @@ def contribute(fund, today=None, amount=None):
         raise ValueError("This week's contribution is already complete.")
     checking, saved = balances(fund)
     rows = plan(fund, saved, today)
-    if not rows:
+    if amount is not None and (not math.isfinite(amount) or amount < 1 or amount != int(amount)):
+        raise ValueError("Choose a whole-dollar amount of at least $1.")
+    if rows:
+        row = rows[0]
+    elif fund["demo"] and amount is not None:  # an extra simulated week past the goal or deadline
+        row = {"Date": max(today, fund["next_due"]), "Contribution ($)": 0, "Projected fund ($)": saved}
+    else:
         raise ValueError("The target is funded or the funding deadline has passed.")
-    row = rows[0]
     if amount is not None:
-        if not math.isfinite(amount) or amount < 1 or amount != int(amount):
-            raise ValueError("Choose a whole-dollar amount of at least $1.")
-        if amount > fund["target"] - saved:
+        if not fund["demo"] and amount > fund["target"] - saved:
             raise ValueError(f"That's more than the ${fund['target'] - saved:,.0f} still to save.")
         row = {**row, "Contribution ($)": int(amount), "Projected fund ($)": saved + int(amount)}
     amount = row["Contribution ($)"]
@@ -86,6 +93,16 @@ def contribute(fund, today=None, amount=None):
             fund["pending"] = None
         raise bank.BankError("The contribution could not be confirmed. Refresh balances before continuing.") from None
     _finish(fund)
+
+
+DEMO_TOP_UP = 1000
+
+
+def add_demo_money(fund, amount=DEMO_TOP_UP):
+    """A simulated paycheck into demo checking, so a demo never runs out of money."""
+    if not fund["demo"]:
+        raise ValueError("Only demo funds can add simulated money.")
+    bank.add_demo_money(fund["checking_id"], amount)
 
 
 def _finish(fund):
