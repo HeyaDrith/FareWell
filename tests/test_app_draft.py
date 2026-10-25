@@ -14,15 +14,15 @@ class AppDraftTests(DemoAppCase):
     def acknowledge(self):
         self.app.checkbox(key="draft_review_acknowledged").check()
 
-    def gemini_on(self):
+    def claude_on(self):
         self.app.toggle(key="demo_ai").set_value(False).run()
 
-    def test_demo_and_missing_key_do_not_call_gemini(self):
+    def test_demo_and_missing_key_do_not_call_claude(self):
         with patch("trip_draft.extract_trip") as extract:
             self.app.text_area(key="ai_chat_0").set_value("A beach trip").run()
             self.assertTrue(self.button("Create trip draft").disabled)
-            self.gemini_on()
-            self.assertTrue(self.button("Create trip draft").disabled)  # no GEMINI_API_KEY
+            self.claude_on()
+            self.assertTrue(self.button("Create trip draft").disabled)  # no ANTHROPIC_API_KEY
             self.click("Load example draft (no API)")
             self.assertIn("Offline example draft", self.visible_text())
             extract.assert_not_called()
@@ -92,13 +92,13 @@ class AppDraftTests(DemoAppCase):
         self.assertNotIn("per-person limit", self.visible_text())
         self.assertEqual(self.app.number_input(key="trip_budget").value, 1500)
 
-    def test_gemini_draft_displays_conflicts_and_does_not_autofill(self):
+    def test_claude_draft_displays_conflicts_and_does_not_autofill(self):
         _, result = trip_draft.example_draft()
         result = result.model_copy(update={"origin": None, "depart": None,
                                            "conflicts": ["The group proposed two different departure dates."]})
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-only-not-a-key"}), \
              patch("trip_draft.extract_trip", return_value=result) as extract:
-            self.gemini_on()
+            self.claude_on()
             self.app.text_area(key="ai_chat_0").set_value("We cannot agree on a weekend.").run()
             self.click("Create trip draft")
             extract.assert_called_once_with("We cannot agree on a weekend.", None, demo=False)
@@ -111,9 +111,9 @@ class AppDraftTests(DemoAppCase):
             self.assertIn("Fill in both airports", self.visible_text())
 
     def test_provider_failure_keeps_manual_trip_form_usable(self):
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
-             patch("trip_draft.extract_trip", side_effect=trip_draft.DraftError("Gemini could not create a usable draft.")):
-            self.gemini_on()
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-only-not-a-key"}), \
+             patch("trip_draft.extract_trip", side_effect=trip_draft.DraftError("Claude could not create a usable draft.")):
+            self.claude_on()
             self.app.text_area(key="ai_chat_0").set_value("Trip plans").run()
             self.click("Create trip draft")
             self.assertIn("could not create a usable draft", self.visible_text())
@@ -125,10 +125,10 @@ class AppDraftTests(DemoAppCase):
         _, result = trip_draft.example_draft()
         upload = Mock(size=4)
         upload.getvalue.return_value = b"test"
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-only-not-a-key"}), \
              patch("streamlit.file_uploader", return_value=upload), \
              patch("trip_draft.extract_trip", return_value=result) as extract:
-            self.gemini_on()
+            self.claude_on()
             self.click("Create trip draft")
             extract.assert_called_once_with("", b"test", demo=False)
             upload.getvalue.return_value = b"new!"

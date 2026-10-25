@@ -1,4 +1,5 @@
-"""Gemini extracts an untrusted, editable trip draft. It cannot search or transfer."""
+"""Claude extracts an untrusted, editable trip draft. It cannot search or transfer."""
+import base64
 from datetime import date, timedelta
 from io import BytesIO
 import os
@@ -11,7 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 MAX_TEXT = 12000
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_MODEL = "claude-opus-5-5"
+# Server-side refusal fallback: if a safety classifier declines, Anthropic re-runs the request
+# on its recommended fallback model instead of returning a refusal.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 Airport = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 Note = Annotated[str, StringConstraints(max_length=240)]
 
@@ -120,48 +124,51 @@ credentials, payment information, and irrelevant conversation. Interests are not
 not a priced or verified itinerary. A person will review every field before use."""
 
 
+def _client(key: str):
+    """The Anthropic client (tests swap this for one with an offline transport)."""
+    import anthropic
+
+    return anthropic.Anthropic(api_key=key, timeout=45.0, max_retries=1)
+
+
 def extract_trip(text: str = "", image: bytes | None = None, *,
                  today: date | None = None, demo: bool = False) -> TripDraft:
-    """One bounded Gemini request. No keys, raw content, or replies are logged."""
+    """One bounded Claude request. No keys, raw content, or replies are logged."""
     if demo:
-        raise DraftError("Turn off demo mode to use Gemini, or load the offline example.")
+        raise DraftError("Turn off demo mode to use Claude, or load the offline example.")
     if not isinstance(text, str) or len(text) > MAX_TEXT:
         raise DraftError("Keep the conversation under 12,000 characters.")
     text = text.strip()
     if not text and image is None:
         raise DraftError("Paste trip ideas or attach a screenshot first.")
     screenshot = prepare_image(image) if image is not None else None
-    key = os.getenv("GEMINI_API_KEY", "").strip()
+    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not key:
-        raise DraftError("Gemini is not configured. Use the offline example or enter the trip manually.")
+        raise DraftError("Claude is not configured. Use the offline example or enter the trip manually.")
+    content = []
+    if screenshot:
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                     "data": base64.standard_b64encode(screenshot).decode("ascii")}})
+    content.append({"type": "text", "text": f"Reference date: {(today or date.today()).isoformat()}\n"
+                                            f"Untrusted trip conversation follows:\n{text}"})
     try:
-        from google import genai
-        from google.genai import types
-
-        contents = [types.Part.from_text(text=f"Reference date: {(today or date.today()).isoformat()}\n"
-                                             f"Untrusted trip conversation follows:\n{text}")]
-        if screenshot:
-            contents.append(types.Part.from_bytes(data=screenshot, mime_type="image/png"))
-        with genai.Client(api_key=key, vertexai=False, http_options=types.HttpOptions(
-            base_url="https://generativelanguage.googleapis.com", timeout=25000,
-            retry_options=types.HttpRetryOptions(attempts=1),
-            client_args={"follow_redirects": False},
-        )) as client:
-            response = client.models.generate_content(
-                model=os.getenv("GEMINI_MODEL", "").strip() or DEFAULT_MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION, temperature=0,
-                    max_output_tokens=3000, response_mime_type="application/json",
-                    response_json_schema=TripDraft.model_json_schema(),
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                ),
+        with _client(key) as client:
+            # No tools are offered, so the model can only return the structured draft.
+            response = client.beta.messages.parse(
+                model=os.getenv("ANTHROPIC_MODEL", "").strip() or DEFAULT_MODEL,
+                max_tokens=16000,
+                system=SYSTEM_INSTRUCTION,
+                messages=[{"role": "user", "content": content}],
+                output_format=TripDraft,  # validated against the schema; parsed_output is a TripDraft
+                output_config={"effort": "low"},  # pulling fields out of a chat needs little reasoning
+                betas=[FALLBACK_BETA],
+                fallbacks="default",
             )
-        if not response.text or len(response.text) > 20000:
-            raise ValueError("Invalid draft response")
-        return TripDraft.model_validate_json(response.text)
+        if response.stop_reason != "end_turn" or not isinstance(response.parsed_output, TripDraft):
+            raise ValueError("Invalid draft response")  # refusal, cut off, or not a draft
+        return response.parsed_output
     except Exception:
-        raise DraftError("Gemini could not create a usable draft. Try again or fill in the trip manually.") from None
+        raise DraftError("Claude could not create a usable draft. Try again or fill in the trip manually.") from None
 
 
 def example_draft(today: date | None = None) -> tuple[str, TripDraft]:

@@ -44,7 +44,7 @@ def _load_example():
 def render_draft_panel(demo: bool):
     with st.expander("Turn our group chat into a trip", expanded=False):
         st.write("Paste the plans everyone has been discussing, or add a screenshot. Review the draft before using it.")
-        st.caption("When you click Create trip draft, the submitted text and screenshot pixels go to Google Gemini. "
+        st.caption("When you click Create trip draft, the submitted text and screenshot pixels go to Anthropic's Claude API. "
                    "Remove names and private details first. The app does not save uploads to disk.")
         example_col, clear_col = st.columns(2)
         example_col.button("Load example draft (no API)", on_click=_load_example)
@@ -61,11 +61,11 @@ def render_draft_panel(demo: bool):
                 st.warning("Choose a screenshot up to 4 MB.")
                 return
             image = upload.getvalue()
-        has_key = bool(os.getenv("GEMINI_API_KEY", "").strip())
+        has_key = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
         if demo:
-            st.caption("Demo mode makes no Gemini calls. Use the example, or turn off Demo mode for Gemini.")
+            st.caption("Demo mode makes no Claude calls. Use the example, or turn off Demo mode for Claude.")
         elif not has_key:
-            st.caption("Gemini is not configured yet. Use the example or the manual trip form.")
+            st.caption("Claude is not configured yet. Use the example or the manual trip form.")
         if st.button("Create trip draft", disabled=demo or not has_key or not (text.strip() or image)):
             # A failed new attempt must not leave an old draft looking current.
             st.session_state.pop("ai_draft", None)
@@ -85,7 +85,7 @@ def render_draft_panel(demo: bool):
             return
         draft = trip_draft.TripDraft.model_validate(st.session_state.ai_draft)
         if st.session_state.ai_example:
-            st.info("Offline example draft. This is not a Gemini analysis of your chat.")
+            st.info("Offline example draft. This is not a Claude analysis of your chat.")
         st.write("**Review the draft**")
         # Render model-supplied text as plain text, never as HTML/Markdown links.
         if draft.summary:

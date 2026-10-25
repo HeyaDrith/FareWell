@@ -18,7 +18,7 @@ import ui
 ss = st.session_state
 # The data-source switches live in app.py's settings menu (same keys on every page).
 demo_search = ss.get("demo_search", not os.getenv("SERPAPI_KEY"))
-demo_ai = ss.get("demo_ai", not os.getenv("GEMINI_API_KEY"))
+demo_ai = ss.get("demo_ai", not os.getenv("ANTHROPIC_API_KEY"))
 bank_demo = ss.get("demo_bank", not os.getenv("NESSIE_API_KEY")) or not os.getenv("NESSIE_API_KEY")
 
 
@@ -43,7 +43,7 @@ def run_bank(fn, *args):
     return None
 
 
-# Keyed widgets with session defaults, so an applied Gemini draft can fill them in.
+# Keyed widgets with session defaults, so an applied Claude draft can fill them in.
 for key, default in {
     "trip_budget": 1500, "trip_origin": "AUS", "trip_destination": "CUN",
     "trip_city": "hotels in Cancun", "trip_depart": date.today() + timedelta(days=90),
@@ -55,7 +55,7 @@ airports = travel.airport_codes()
 for key in ("trip_origin", "trip_destination"):
     code = (ss.get(key) or "").strip().upper()
     ss[key] = code or None
-    if code and code not in airports:  # e.g. a smaller airport typed in or from a Gemini draft
+    if code and code not in airports:  # e.g. a smaller airport typed in or from a Claude draft
         airports = [code] + airports
 
 
@@ -83,7 +83,7 @@ has_trip = "trip" in ss
 locked_now = has_trip and bool(ss.trip.get("locked"))
 ui.steps(3 if locked_now else 2 if has_trip else 1, {1, 2, 3} if locked_now else {1} if has_trip else set())
 
-# Optional: turn a group chat or screenshot into reviewed trip details (Gemini). It runs before
+# Optional: turn a group chat or screenshot into reviewed trip details (Claude). It runs before
 # the trip widgets exist, because applying a draft writes their values into session state.
 draft_ui.render_draft_panel(demo_ai)
 

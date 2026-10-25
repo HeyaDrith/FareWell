@@ -1,16 +1,19 @@
+import base64
 import json
 import os
 from datetime import date, timedelta
 from io import BytesIO
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import httpx
+import anthropic
+import httpx2
 from PIL import Image, PngImagePlugin
 import trip_draft as drafts
 
 
 TODAY = date(2026, 10, 24)
+KEY = "test-only-not-a-key"
 
 
 def screenshot():
@@ -22,86 +25,114 @@ def screenshot():
 
 
 class TripDraftTests(unittest.TestCase):
+    """The real Anthropic SDK talks to an offline transport, so these check the actual request."""
+
     def setUp(self):
-        env = patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key", "GEMINI_MODEL": ""})
+        env = patch.dict(os.environ, {"ANTHROPIC_API_KEY": KEY, "ANTHROPIC_MODEL": ""})
         env.start()
         self.addCleanup(env.stop)
-        network = patch("httpx.Client.send", side_effect=AssertionError("External HTTP forbidden"))
-        self.network = network.start()
+        network = patch("socket.create_connection", side_effect=AssertionError("External HTTP forbidden"))
+        network.start()
         self.addCleanup(network.stop)
-        self.addCleanup(self.network.assert_not_called)
+        self.requests = []
+        self.reply("{}")
 
-    def client_reply(self, text):
-        context = patch("google.genai.Client")
-        factory = context.start()
+    def reply(self, text, stop_reason="end_turn", status=200):
+        """Every request in this test gets this message back (Claude's structured reply is text)."""
+        def handler(request):
+            self.requests.append(request)
+            if status != 200:
+                return httpx2.Response(status, json={"type": "error", "error": {
+                    "type": "api_error", "message": "secret-sentinel"}})
+            return httpx2.Response(200, json={
+                "id": "msg_test", "type": "message", "role": "assistant", "model": drafts.DEFAULT_MODEL,
+                "content": [{"type": "text", "text": text}] if text is not None else [],
+                "stop_reason": stop_reason, "stop_sequence": None, "usage": {"input_tokens": 9, "output_tokens": 9}})
+
+        def client(key):
+            return anthropic.Anthropic(api_key=key, max_retries=0, http_client=anthropic.DefaultHttpxClient(
+                transport=httpx2.MockTransport(handler)))
+        context = patch.object(drafts, "_client", side_effect=client)
+        context.start()
         self.addCleanup(context.stop)
-        factory.return_value.__enter__.return_value.models.generate_content.return_value = Mock(text=text)
-        return factory
 
-    def test_structured_extraction_has_no_tools_and_closes_client(self):
+    def body(self, i=-1):
+        return json.loads(self.requests[i].content)
+
+    def test_structured_extraction_request(self):
         _, sample = drafts.example_draft(TODAY)
-        factory = self.client_reply(sample.model_dump_json())
-        result = drafts.extract_trip("Our trip plans", today=TODAY)
-        self.assertEqual(result, sample)
-        kwargs = factory.return_value.__enter__.return_value.models.generate_content.call_args.kwargs
-        self.assertEqual(kwargs["model"], drafts.DEFAULT_MODEL)
-        self.assertIsNone(kwargs["config"].tools)
-        self.assertTrue(kwargs["config"].automatic_function_calling.disable)
-        self.assertIn("untrusted source material", kwargs["config"].system_instruction)
-        self.assertNotIn("test-only-not-a-key", str(kwargs))
-        self.assertEqual(factory.call_args.kwargs["http_options"].timeout, 25000)
-        self.assertEqual(factory.call_args.kwargs["http_options"].retry_options.attempts, 1)
-        self.assertFalse(factory.call_args.kwargs["http_options"].client_args["follow_redirects"])
-        factory.return_value.__exit__.assert_called_once()
+        self.reply(sample.model_dump_json())
+        self.assertEqual(drafts.extract_trip("Our trip plans", today=TODAY), sample)
+        request, body = self.requests[0], self.body()
+        self.assertEqual(request.url.host, "api.anthropic.com")
+        self.assertEqual(request.headers["authorization"], f"Bearer {KEY}")  # SDK 2.x auth header
+        self.assertNotIn(KEY, request.content.decode())  # the key only travels in the header
+        self.assertEqual(body["model"], "claude-opus-5-5")
+        self.assertNotIn("tools", body)  # nothing to call: the draft is the only possible output
+        self.assertIn("untrusted source material", body["system"])
+        self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
+        self.assertEqual(body["output_config"]["effort"], "low")
+        self.assertEqual((body["fallbacks"], request.headers["anthropic-beta"]), ("default", drafts.FALLBACK_BETA))
+        self.assertIn("Reference date: 2026-10-24", body["messages"][0]["content"][-1]["text"])
+
+    def test_model_override(self):
+        with patch.dict(os.environ, {"ANTHROPIC_MODEL": "claude-sonnet-5-5"}):
+            drafts.extract_trip("Trip plans")
+        self.assertEqual(self.body()["model"], "claude-sonnet-5-5")
 
     def test_unknowns_and_conflicts_remain_explicit(self):
-        factory = self.client_reply(json.dumps({"conflicts": ["Two departure dates were suggested."]}))
+        self.reply(json.dumps({"conflicts": ["Two departure dates were suggested."]}))
         result = drafts.extract_trip("People disagree on when to leave")
         self.assertIsNone(result.depart)
         self.assertEqual(result.conflicts, ["Two departure dates were suggested."])
         self.assertIn("What is the departure date?", drafts.review_questions(result))
-        self.assertTrue(factory.called)
 
     def test_invalid_or_tool_shaped_output_is_rejected_without_echoing_it(self):
-        factory = self.client_reply("")
-        response = factory.return_value.__enter__.return_value.models.generate_content.return_value
         for bad in ("secret-sentinel", "", '{"travelers": 0}', '{"budget": -5}',
                     '{"travelers": true}', '{"origin": "invalid"}',
                     '{"transfer": "secret-sentinel"}', '{"budget": NaN}'):
             with self.subTest(response=bad):
-                response.text = bad
+                self.reply(bad)
                 with self.assertRaises(drafts.DraftError) as caught:
                     drafts.extract_trip("Trip plans")
                 self.assertNotIn("secret-sentinel", str(caught.exception))
 
-    def test_provider_error_is_sanitized(self):
-        factory = self.client_reply("")
-        factory.return_value.__enter__.return_value.models.generate_content.side_effect = RuntimeError("secret-sentinel")
-        with self.assertRaises(drafts.DraftError) as caught:
-            drafts.extract_trip("Trip plans")
-        self.assertNotIn("secret-sentinel", str(caught.exception))
+    def test_refusal_and_cut_off_replies_are_not_used(self):
+        _, sample = drafts.example_draft(TODAY)
+        for stop_reason, text in (("refusal", None), ("max_tokens", sample.model_dump_json())):
+            with self.subTest(stop_reason=stop_reason):
+                self.reply(text, stop_reason=stop_reason)
+                with self.assertRaises(drafts.DraftError):
+                    drafts.extract_trip("Trip plans")
 
-    def test_demo_missing_key_empty_and_oversized_inputs_do_not_call_sdk(self):
-        factory = self.client_reply("{}")
+    def test_provider_error_is_sanitized(self):
+        for status in (401, 429, 500):
+            with self.subTest(status=status):
+                self.reply("{}", status=status)
+                with self.assertRaises(drafts.DraftError) as caught:
+                    drafts.extract_trip("Trip plans")
+                self.assertNotIn("secret-sentinel", str(caught.exception))
+                self.assertNotIn(KEY, str(caught.exception))
+
+    def test_demo_missing_key_empty_and_oversized_inputs_do_not_call_the_api(self):
         cases = (("Trip", None, True), ("", None, False), ("x" * (drafts.MAX_TEXT + 1), None, False),
                  ("Trip", b"invalid", False), ("Trip", b"x" * (drafts.MAX_IMAGE_BYTES + 1), False))
         for text, image, demo in cases:
             with self.subTest(text_length=len(text), demo=demo), self.assertRaises(drafts.DraftError):
                 drafts.extract_trip(text, image, demo=demo)
-        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}), self.assertRaises(drafts.DraftError):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}), self.assertRaises(drafts.DraftError):
             drafts.extract_trip("Trip")
-        factory.assert_not_called()
+        self.assertEqual(self.requests, [])
 
     def test_screenshot_only_is_inline_and_metadata_is_removed(self):
-        factory = self.client_reply("{}")
         drafts.extract_trip(image=screenshot())
-        contents = factory.return_value.__enter__.return_value.models.generate_content.call_args.kwargs["contents"]
-        self.assertEqual(contents[1].inline_data.mime_type, "image/png")
-        data = contents[1].inline_data.data
+        image_block, text_block = self.body()["messages"][0]["content"]
+        self.assertEqual((image_block["type"], image_block["source"]["media_type"]), ("image", "image/png"))
+        data = base64.b64decode(image_block["source"]["data"])
         self.assertNotIn(b"do-not-forward-metadata", data)
         with Image.open(BytesIO(data)) as image:
             self.assertEqual(image.size, (80, 50))
-        factory.return_value.__enter__.return_value.files.upload.assert_not_called()
+        self.assertEqual(text_block["type"], "text")
 
     def test_invalid_image_format_and_dimensions_are_rejected(self):
         data = BytesIO()
@@ -133,37 +164,9 @@ class TripDraftTests(unittest.TestCase):
         self.assertIn("Is the budget per person or for the whole group?", questions)
         self.assertTrue(any("USD" in question for question in questions))
 
-    def test_offline_example_is_deterministic_and_does_not_invoke_sdk(self):
-        factory = self.client_reply("{}")
+    def test_offline_example_is_deterministic_and_does_not_call_the_api(self):
         text, example = drafts.example_draft(TODAY)
         self.assertIn(example.depart.isoformat(), text)
         self.assertEqual(example.travelers, 4)
         self.assertEqual(drafts.review_questions(example, TODAY), [])
-        factory.assert_not_called()
-
-
-class SdkContractTests(unittest.TestCase):
-    def test_actual_sdk_serializes_schema_using_mock_transport(self):
-        from google import genai
-        real_client = genai.Client
-        _, sample = drafts.example_draft(TODAY)
-        captured = []
-
-        def handler(request):
-            captured.append(json.loads(request.content))
-            self.assertEqual(request.url.host, "generativelanguage.googleapis.com")
-            self.assertEqual(request.headers.get("x-goog-api-key"), "test-only-not-a-key")
-            return httpx.Response(200, json={"candidates": [{"content": {"role": "model", "parts": [
-                {"text": sample.model_dump_json()}]}, "finishReason": "STOP"}]})
-
-        def factory(**kwargs):
-            kwargs["http_options"].httpx_client = httpx.Client(transport=httpx.MockTransport(handler))
-            return real_client(**kwargs)
-
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key", "GEMINI_MODEL": ""}), \
-             patch("google.genai.Client", side_effect=factory), \
-             patch("socket.create_connection", side_effect=AssertionError("External HTTP forbidden")):
-            self.assertEqual(drafts.extract_trip("Trip plans", today=TODAY), sample)
-        self.assertEqual(len(captured), 1)
-        self.assertEqual(captured[0]["generationConfig"]["responseMimeType"], "application/json")
-        self.assertNotIn("tools", captured[0])
+        self.assertEqual(self.requests, [])
