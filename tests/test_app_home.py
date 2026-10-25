@@ -58,7 +58,7 @@ class HomePageTests(DemoAppCase):
 
 class FreshHomePageTests(unittest.TestCase):
     def test_empty_states_and_no_sample_numbers(self):
-        with patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "ANTHROPIC_API_KEY": "",
+        with patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "GEMINI_API_KEY": "",
                                      "PYTHON_DOTENV_DISABLED": "1"}):
             app = AppTest.from_file(str(APP), default_timeout=15).run()
         self.assertEqual(len(app.exception), 0)
@@ -71,7 +71,7 @@ class FreshHomePageTests(unittest.TestCase):
                          ["Sample travel prices (no SerpApi calls)", "Demo bank (no Nessie calls)"])
 
     def test_the_app_is_called_farewell(self):
-        with patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "ANTHROPIC_API_KEY": "",
+        with patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "GEMINI_API_KEY": "",
                                      "PYTHON_DOTENV_DISABLED": "1"}):
             app = AppTest.from_file(str(APP), default_timeout=15).run()
             self.assertIn("Welcome to FareWell", "\n".join(m.value for m in app.markdown))

@@ -16,7 +16,7 @@ import ui
 load_dotenv()
 # On Streamlit Community Cloud, keys live in st.secrets instead of .env.
 try:
-    for k in ("SERPAPI_KEY", "NESSIE_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"):
+    for k in ("SERPAPI_KEY", "NESSIE_API_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"):
         if k in st.secrets:
             os.environ.setdefault(k, st.secrets[k])
 except Exception:
@@ -38,7 +38,7 @@ _, settings = st.columns([4, 1])
 with settings.popover("Data sources", icon=":material/tune:", use_container_width=True):
     st.toggle("Sample travel prices (no SerpApi calls)", value=not os.getenv("SERPAPI_KEY"), key="demo_search")
     st.toggle("Demo bank (no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"), key="demo_bank")
-    st.toggle("Demo AI drafts (no Claude calls)", value=not os.getenv("ANTHROPIC_API_KEY"), key="demo_ai")
+    st.toggle("Demo AI drafts (no Gemini calls)", value=not os.getenv("GEMINI_API_KEY"), key="demo_ai")
     st.caption("Turn a switch off to use the live API once its key is set in `.env`.")
 
 page.run()

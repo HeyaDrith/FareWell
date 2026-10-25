@@ -67,7 +67,7 @@ Keys are optional for the demo. For live integrations, store them only in a loca
 `.env` or Streamlit's secret settings. `.env.example` contains empty placeholders.
 Never commit filled environment files or `secrets.toml`.
 
-## Claude: turn the group chat into a trip
+## Gemini: turn the group chat into a trip
 This optional feature sits above the existing trip form. It extracts an editable draft
 from pasted text, a PNG/JPEG screenshot, or both. Airports, dates, hotel city, traveler
 count, budget scope/currency, and preferences are reviewed before use. Missing details
@@ -80,14 +80,12 @@ To try it without credentials:
 4. Edit the draft, check the review confirmation, and select **Apply reviewed draft**.
 5. Select **Start planning** in the normal trip form, then pick your options.
 
-For Claude itself, create an API key in the [Anthropic Console](https://console.anthropic.com/)
-(pay-as-you-go; each draft is one short request), set `ANTHROPIC_API_KEY` privately in `.env` or
-Streamlit secrets, restart the app, turn off **Demo AI drafts** in the **Data sources** menu, and
-select **Create trip draft** after pasting text or uploading a screenshot. The default model is
-`claude-opus-5-5`; `ANTHROPIC_MODEL` is an optional override (for example `claude-haiku-5-5` for
-lower cost). Requests use the Anthropic Python SDK's structured outputs (`messages.parse` with the
-`TripDraft` schema), low effort, and Anthropic's server-side refusal fallback (`fallbacks: "default"`).
-The Anthropic key is independent of the SerpApi/Nessie keys. If those are absent, their
+For Gemini itself, configure `GEMINI_API_KEY` privately in `.env` or Streamlit secrets,
+restart the app, turn off **Demo AI drafts** in the sidebar, and select **Create trip draft** after pasting
+text or uploading a screenshot. `GEMINI_MODEL` is an optional override; the default is
+`gemini-3.5-flash-lite`, a model with image and structured-output support documented by
+[Google](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite).
+The Gemini key is independent of the SerpApi/Nessie keys. If those are absent, their
 existing demo fallbacks still apply and remain labeled.
 
 - A draft never automatically searches, books, creates an account, or transfers money.
@@ -98,18 +96,17 @@ existing demo fallbacks still apply and remain labeled.
   Group size, group budgets, and interests remain planning notes: the current search
   quotes one traveler and one room. It does not yet price shared accommodation, generate
   a verified itinerary, search activities/restaurants, or coordinate votes.
-- Submitted text and image pixels go to Anthropic only after **Create trip draft** is clicked.
+- Submitted text and image pixels go to Google only after **Create trip draft** is clicked.
   Remove private content first; model instructions cannot guarantee redaction. Images are
   checked for actual PNG/JPEG format, limited to 4 MB / 12 million pixels, resized to at
   most 2000 pixels per side, and stripped of metadata in memory. This app never saves
-  uploads to disk or logs prompts/replies. Anthropic's handling of submissions is separate.
-- Input is capped at 12,000 characters. Requests have a 45-second timeout and at most one retry,
-  with no tools offered. Refusals, cut-off replies and errors show a safe message (never the raw
-  reply or the key), and the manual flow stays usable.
+  uploads to disk or logs prompts/replies. Google's handling of submissions is separate.
+- Input is capped at 12,000 characters. Requests have a 25-second timeout and one attempt,
+  with no tools, fixed HTTPS transport, and no redirects. Failures leave the manual flow usable.
 - **Clear chat and draft** removes the input widgets and editable draft from the session.
   Already-confirmed trip fields and planning notes remain until replaced or the session ends.
-- Tests run the real Anthropic SDK against an offline mock transport. A real authenticated
-  Claude request and model extraction accuracy still need a smoke test with a configured key.
+- Tests use mocked Gemini responses and an offline SDK transport. A real authenticated
+  Gemini request and model extraction accuracy still need a smoke test with a configured key.
 
 `trip_draft.py` owns extraction, validation, and the offline example. `draft_ui.py` owns
 review and confirmation. Existing `travel.py`, `planner.py`, and `bank.py` APIs are unchanged.
