@@ -1,9 +1,13 @@
 """Map data: flight paths from airport codes and hotel pins near the destination."""
 import math
 import unittest
+from unittest.mock import MagicMock, patch
+
+import requests
 
 import trip_map
 import travel
+import ui
 
 
 class FlightPathTests(unittest.TestCase):
@@ -105,6 +109,66 @@ class HotelPointTests(unittest.TestCase):
                          ("<b>Bold</b> Inn", "$630 total · $90/night", "4.4★ rating"))
         for name in ("title", "detail", "rating", "note", "tone"):
             self.assertIn("{" + name + "}", trip_map._TOOLTIP["html"])
+        self.assertIn("src='{image}'", trip_map._HOTEL_TOOLTIP["html"])
+
+    def test_hover_card_picture_is_the_hotel_photo_or_a_drawn_stand_in(self):
+        photo = dict(self.hotel("Photo", 21.1, -86.8), image="https://img.example/a.jpg")
+        blocked = dict(self.hotel("Blocked", 21.1, -86.8), image="https://img.example/blocked.jpg")
+        plain = self.hotel("Plain", 21.1, -86.8)
+        with patch("travel.picture_data", side_effect=lambda url: "data:image/jpeg;base64,QQ==" if "a.jpg" in url else ""):
+            points = trip_map.hotel_points([photo, blocked, plain], None, picked=set(), recommended=None)
+        self.assertEqual([p["image"] for p in points],
+                         ["data:image/jpeg;base64,QQ==", ui.PLACEHOLDERS["hotel"], ui.PLACEHOLDERS["hotel"]])
+        stops = trip_map.flight_path([], "AUS", "CUN")
+        self.assertEqual({row["image"] for row in trip_map._airport_layers(stops)[0].data}, {""})  # airports: none
+
+
+class PictureTests(unittest.TestCase):
+    def setUp(self):
+        network = patch("requests.sessions.Session.request", side_effect=AssertionError("External HTTP forbidden"))
+        network.start()
+        self.addCleanup(network.stop)
+        travel.picture_data.cache_clear()
+        self.addCleanup(travel.picture_data.cache_clear)
+
+    def test_picture_is_the_downloaded_image_or_the_stand_in(self):
+        with patch("travel.picture_data", return_value="data:image/png;base64,QQ==") as fetch:
+            self.assertEqual(ui.picture_url(" https://img.example/a.png ", "hotel"), "data:image/png;base64,QQ==")
+            fetch.assert_called_once_with("https://img.example/a.png")
+            self.assertIn("ts-pic-logo", ui.picture("https://img.example/logo.png", "flight"))  # logos are fitted
+        for bad in ("", None, "http://img.example/a.jpg", "javascript:alert(1)"):
+            self.assertEqual(ui.picture_url(bad, "hotel"), ui.PLACEHOLDERS["hotel"])  # never fetched
+        self.assertNotIn("ts-pic-logo", ui.picture("", "flight"))  # the stand-in fills its tile
+        with patch("travel.picture_data", return_value="data:image/png;base64,'><script>"):
+            self.assertIn("&#x27;&gt;&lt;script&gt;", ui.picture("https://img.example/a.png", "hotel"))  # escaped
+
+    def test_download_keeps_only_raster_images_that_load(self):
+        def reply(status=200, kind="image/jpeg", body=b"pic"):
+            response = MagicMock(status_code=status, headers={"Content-Type": kind})
+            response.iter_content.return_value = [body]
+            response.__enter__.return_value = response
+            return response
+        cases = {"https://a.example/ok.jpg": (reply(), "data:image/jpeg;base64,cGlj"),
+                 "https://a.example/blocked.jpg": (reply(status=403), ""),
+                 "https://a.example/page.html": (reply(kind="text/html"), ""),
+                 "https://a.example/vector.svg": (reply(kind="image/svg+xml"), ""),
+                 "https://a.example/huge.jpg": (reply(body=b"x" * (travel.MAX_PICTURE_BYTES + 1)), "")}
+        for url, (response, expected) in cases.items():
+            with self.subTest(url=url), patch("requests.get", return_value=response):
+                self.assertEqual(travel.picture_data(url), expected)
+        with patch("requests.get", side_effect=requests.Timeout):
+            self.assertEqual(travel.picture_data("https://a.example/slow.jpg"), "")
+        with patch("requests.get") as get:
+            self.assertEqual(travel.picture_data("http://a.example/plain.jpg"), "")  # https only
+            get.assert_not_called()
+
+    def test_broken_pictures_fall_back_in_css_and_the_stylesheet_survives_sanitizing(self):
+        self.assertIn("ts-pic-hotel", trip_map._HOTEL_TOOLTIP["html"])
+        self.assertIn(".ts-pic::before", ui._CSS)
+        self.assertIn('url("HOTEL_TILE")', ui._CSS)  # filled in with the drawn stand-in by inject_css
+        # Streamlit's HTML cleaner drops a whole style block that contains an angle bracket.
+        built = ui._CSS.replace("BEACH", ui.BEACH_URL).replace("HOTEL_TILE", ui.PLACEHOLDERS["hotel"])
+        self.assertNotIn("<", built.replace("FLIGHT_TILE", ui.PLACEHOLDERS["flight"]))
 
 
 if __name__ == "__main__":

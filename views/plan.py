@@ -327,6 +327,8 @@ if not (flights and hotels):
     st.warning("No matching flights or hotels with complete prices. Try different dates or a different destination.")
 
 flights_shown, hotels_shown = flights[:6], hotels[:6]
+# Download the logos and photos once, in parallel (cached), before the cards and map use them.
+travel.prefetch_pictures([f.get("logo") for f in flights_shown] + [h.get("image") for h in hotels_shown])
 shortest = min((f["duration_min"] for f in flights_shown if f["duration_min"]), default=0)
 flight_chosen = planner.pick_options([f["price"] for f in flights_shown],
                                      [planner.flight_quality(f, shortest) for f in flights_shown], allowance["Flight"])
@@ -368,7 +370,8 @@ if flights:
             description = f"{f['airline']} flight {origin}→{dest}" + (f" ({flight_id(f)})" if flight_id(f) else "")
             pick_id = pick_for("Flight", description)
             with st.container(key=f"opt-flight-{i}" + ("-picked" if pick_id else "")):
-                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
+                pic, a, b, c = st.columns([1.5, 4, 3, 1.4], vertical_alignment="center")
+                pic.html(ui.picture(f.get("logo"), "flight"))
                 a.markdown(f"**{esc(f['airline'])}** · " + (f"{esc(flight_id(f))} · " if flight_id(f) else "")
                            + f"{f['duration_min'] // 60}h {f['duration_min'] % 60}m · "
                            f"{'Nonstop' if not stops else f'{stops} stop' + ('s' if stops > 1 else '')}"
@@ -394,7 +397,8 @@ if hotels:
             saved = planner.savings_vs_typical(h["total"], typical)
             pick_id = pick_for("Hotel", h["name"])
             with st.container(key=f"opt-hotel-{i}" + ("-picked" if pick_id else "")):
-                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
+                pic, a, b, c = st.columns([1.5, 4, 3, 1.4], vertical_alignment="center")
+                pic.html(ui.picture(h.get("image"), "hotel"))
                 a.markdown(f"**{esc(h['name'])}** · {h['rating']}★ · {money(h['per_night'])}/night"
                            + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else "") + added_line(pick_id))
                 views = [("View hotel ↗" if h.get("property_token") else "Find hotel ↗", hotel_buttons(h)[0][1]),

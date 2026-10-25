@@ -22,7 +22,7 @@ class TravelTests(unittest.TestCase):
             rows = travel.search_flights("AUS", "CUN", "2027-01-01", "2027-01-08")
         self.assertEqual([row["price"] for row in rows], [310.25, 450.0])
         self.assertEqual(set(rows[0]), {"airline", "price", "duration_min", "stops",
-                                        "flight_numbers", "departs", "route"})
+                                        "flight_numbers", "departs", "route", "logo"})
         self.assertEqual(client.call_args.args[0]["currency"], "USD")
 
     def test_hotels_use_total_stay_price_and_omit_incomplete_quotes(self):
@@ -37,7 +37,7 @@ class TravelTests(unittest.TestCase):
         with patch("travel._client", return_value=data):
             rows = travel.search_hotels("Cancun", "2027-01-01", "2027-01-08")
         self.assertEqual(rows, [{"name": "Complete", "per_night": 100.0, "total": 750.0, "rating": 4.5,
-                                 "property_token": "", "website": "", "lat": None, "lon": None}])
+                                 "property_token": "", "website": "", "lat": None, "lon": None, "image": ""}])
 
     def test_demo_hotel_total_uses_requested_nights(self):
         for nights in (1, 5, 7):
@@ -118,6 +118,24 @@ class MapDataTests(unittest.TestCase):
         self.assertEqual({r["name"]: (r["lat"], r["lon"]) for r in rows},
                          {"Good": (21.12, -86.75), "Out of range": (None, None),
                           "Not a number": (None, None), "Missing": (None, None)})
+
+    def test_airline_logo_and_hotel_photo_keep_only_https_links(self):
+        flights = self.search({"best_flights": [
+            {"price": 300, "total_duration": 200, "airline_logo": "https://img.example/wn.png", "flights": [{}]},
+            {"price": 310, "total_duration": 200, "flights": [{"airline_logo": "https://img.example/aa.png"}]},
+            {"price": 320, "total_duration": 200, "airline_logo": "javascript:alert(1)", "flights": [{}]}]})
+        self.assertEqual([f["logo"] for f in flights], ["https://img.example/wn.png", "https://img.example/aa.png", ""])
+
+        def hotel(name, images):
+            return {"name": name, "rate_per_night": {"extracted_lowest": 90},
+                    "total_rate": {"extracted_lowest": 630}, "images": images}
+        rows = self.search({"properties": [
+            hotel("Photo", [{"thumbnail": "http://insecure.example/a.jpg"}, {"thumbnail": "https://img.example/b.jpg"}]),
+            hotel("Original only", [{"original_image": "https://img.example/c.jpg"}]),
+            hotel("None", None), hotel("Junk", ["not a dict"])]}, kind="hotels")
+        self.assertEqual({r["name"]: r["image"] for r in rows},
+                         {"Photo": "https://img.example/b.jpg", "Original only": "https://img.example/c.jpg",
+                          "None": "", "Junk": ""})
 
     def test_airport_lookup(self):
         aus = travel.airport_location("aus")

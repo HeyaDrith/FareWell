@@ -9,6 +9,8 @@ from urllib.parse import quote
 
 import streamlit as st
 
+import travel
+
 # A drawn beach scene (sky, sun, sea, sand, palms) so the hero needs no photo download.
 _BEACH_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 560' preserveAspectRatio='xMidYMid slice'>
 <defs>
@@ -40,6 +42,32 @@ _BEACH_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 560' p
 </g>
 </svg>"""
 BEACH_URL = "data:image/svg+xml;charset=utf-8," + quote(" ".join(_BEACH_SVG.split()))
+
+
+def _tile(top: str, bottom: str, emoji: str) -> str:
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 110'><defs><linearGradient id='g' x1='0' y1='0' "
+           f"x2='1' y2='1'><stop offset='0' stop-color='{top}'/><stop offset='1' stop-color='{bottom}'/></linearGradient>"
+           f"</defs><rect width='160' height='110' fill='url(#g)'/><text x='80' y='72' font-size='46' "
+           f"text-anchor='middle'>{emoji}</text></svg>")
+    return "data:image/svg+xml;charset=utf-8," + quote(svg)
+
+
+# Drawn stand-ins for options without a photo or logo (sample data has neither); never a fake photo.
+PLACEHOLDERS = {"hotel": _tile("#7FD3E6", "#0E7CC4", "🏨"), "flight": _tile("#DCEAF7", "#9CC9EA", "✈️")}
+
+
+def picture_url(url: str, kind: str) -> str:
+    """The provider's picture (downloaded by the server, as a data: URI), or the drawn stand-in
+    for this kind of option when there's none or it can't be loaded."""
+    return travel.picture_data(str(url or "").strip()) or PLACEHOLDERS[kind]
+
+
+def picture(url: str, kind: str) -> str:
+    """Escaped <img> for the left side of an option banner (a real airline logo is fitted, not cropped).
+    If the browser still can't draw it, CSS shows the stand-in over the broken image."""
+    src = picture_url(url, kind)
+    logo = " ts-pic-logo" if kind == "flight" and src != PLACEHOLDERS[kind] else ""
+    return f"<img class='ts-pic ts-pic-{kind}{logo}' src='{escape(src, quote=True)}' alt=''>"
 
 _CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
@@ -96,7 +124,18 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 [class*="st-key-card-"] { background: var(--ts-card); border: 1px solid var(--ts-line); border-radius: 22px;
   padding: 22px 24px; box-shadow: var(--ts-shadow); }
 [class*="st-key-opt-"] { background: var(--ts-card); border: 1px solid var(--ts-line); border-radius: 16px;
-  padding: 10px 14px; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+  padding: 12px 16px 12px 12px; margin-bottom: 6px; box-shadow: 0 4px 14px rgba(11, 37, 69, 0.06);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+/* Banner picture on the left of each option: a hotel photo, or the airline's logo on a soft tile */
+.ts-pic { display: block; width: 100%; height: 92px; border-radius: 12px; object-fit: cover; background: var(--ts-sky); }
+/* A picture that fails to load (e.g. a host that blocks hotlinking) shows the drawn stand-in, not a
+   broken-image box: browsers only draw ::before on an image that couldn't load.
+   (No angle brackets in this stylesheet: Streamlit's HTML cleaner drops a style block containing one.) */
+.ts-pic, .deck-tooltip img.ts-pic-hotel { position: relative; }
+.ts-pic::before, .deck-tooltip img.ts-pic-hotel::before { content: ""; position: absolute; inset: 0;
+  border-radius: inherit; background: center / cover no-repeat url("HOTEL_TILE"); }
+.ts-pic-flight::before { background-image: url("FLIGHT_TILE"); }
+.ts-pic-logo { object-fit: contain; padding: 14px; background: #F3F8FD; border: 1px solid var(--ts-line); }
 [class*="st-key-opt-"]:hover { border-color: #9CC9EA; box-shadow: 0 8px 22px rgba(14, 124, 196, 0.12); transform: translateY(-1px); }
 /* An option that's in the trip: green border, soft green fill and a check bar on the left */
 [class*="st-key-opt-"][class*="-picked"], [class*="st-key-opt-"][class*="-picked"]:hover {
@@ -114,6 +153,12 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 [data-testid="stDeckGlJsonChart"] .deck-widgets-root {
   position: absolute; inset: 0; pointer-events: none;
 }
+/* Hover cards with a picture are tall: let them spill past the map's edge instead of being
+   cut off (the map itself keeps its rounded corners), and skip the picture where there's none. */
+[data-testid="stDeckGlJsonChart"] { position: relative; z-index: 5; }  /* the card covers the caption below */
+[data-testid="stDeckGlJsonChart"] > div, [data-testid="stDeckGlJsonChart"] .deck-widgets-root div { overflow: visible !important; }
+[data-testid="stDeckGlJsonChart"] canvas { border-radius: 14px; }
+.deck-tooltip img[src=""] { display: none !important; }
 
 /* Beach heroes */
 .st-key-hero-home, .st-key-hero-plan, .st-key-hero-fund { position: relative; border-radius: 28px; overflow: hidden;
@@ -184,7 +229,8 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 
 def inject_css():
     """Load the theme on every page (call once per run, before any content)."""
-    st.html("<style>" + _CSS.replace("BEACH", BEACH_URL) + "</style>")
+    st.html("<style>" + _CSS.replace("BEACH", BEACH_URL).replace("HOTEL_TILE", PLACEHOLDERS["hotel"])
+            .replace("FLIGHT_TILE", PLACEHOLDERS["flight"]) + "</style>")
 
 
 def h(text) -> str:

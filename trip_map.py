@@ -5,6 +5,7 @@ import pydeck as pdk
 import streamlit as st
 
 import travel
+import ui
 
 MAX_HOTEL_KM = 150  # hotels farther than this from the destination airport aren't plotted
 
@@ -21,14 +22,19 @@ _TOOLTIP = {"html": "<b>{title}</b><div>{detail}</div><div>{rating}</div>"
             "style": {"backgroundColor": "white", "color": "#1f2937", "fontSize": "13px",
                       "lineHeight": "1.45", "padding": "8px 10px", "borderRadius": "8px",
                       "boxShadow": "0 2px 8px rgba(15, 23, 42, 0.18)"}}
+# The hotel map's cards also show the picture from the hotel's banner (escaped like the text).
+_HOTEL_TOOLTIP = dict(_TOOLTIP, html="<img class='ts-pic-hotel' src='{image}' alt='' "
+                                     "style='display: block; position: relative; width: 220px; height: 120px; "
+                                     "object-fit: cover; border-radius: 6px; margin-bottom: 6px'>" + _TOOLTIP["html"])
 _HOTEL_STATUS = {"picked": ("#16a34a", "In your trip"), "recommended": ("#b45309", "⭐ Recommended"),
                  "": ("#64748b", "Other option")}
 MAP_VIEWS = ["✈️ Flight path", "🏨 Hotels on the map"]
 
 
-def _card(title: str, detail: str = "", rating: str = "", note: str = "", tone: str = "#1f2937") -> dict:
-    """Hover-card fields for one point (every pickable point needs all of them)."""
-    return {"title": title, "detail": detail, "rating": rating, "note": note, "tone": tone}
+def _card(title: str, detail: str = "", rating: str = "", note: str = "", tone: str = "#1f2937",
+          image: str = "") -> dict:
+    """Hover-card fields for one point (every pickable point needs all of them; no image = no picture)."""
+    return {"title": title, "detail": detail, "rating": rating, "note": note, "tone": tone, "image": image}
 
 
 def flight_path(route: list[str], origin: str, dest: str) -> list[dict]:
@@ -73,7 +79,7 @@ def hotel_points(hotels: list[dict], dest: dict | None, picked: set[str], recomm
                        "label": f"{h['name']} · ${h['total']:,.0f} total · {h['rating']}★"
                                 + {"picked": " · in your trip", "recommended": " · recommended"}.get(status, ""),
                        **_card(str(h["name"]), f"${h['total']:,.0f} total{nightly}", f"{h['rating']}★ rating",
-                               word, tone)})
+                               word, tone, ui.picture_url(h.get("image"), "hotel"))})
     return points
 
 
@@ -214,6 +220,6 @@ def render(flight_label: str, stops: list[dict], hotels_on_map: list[dict], plac
                 positions.append([dest["lon"], dest["lat"]])
             st.pydeck_chart(pdk.Deck(layers=layers, views=[_FLAT_VIEW], map_style="light",
                                      initial_view_state=_view(positions, max_zoom=13),
-                                     tooltip=_TOOLTIP), height=MAP_HEIGHT)
+                                     tooltip=_HOTEL_TOOLTIP), height=MAP_HEIGHT)
             st.caption(f"Hotels near {place}: 🟢 in your trip · 🟡 recommended · ⚪ other options. "
                        "Hover a dot for its price and rating.")
