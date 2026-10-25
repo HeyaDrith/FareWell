@@ -107,6 +107,14 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 [class*="st-key-opt-"][class*="-picked"] [data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
   border-color: #C0392B !important; background: #FDECEA; }
 
+/* Deck.gl 9's widget root must share the canvas origin. Without this layout rule,
+   the empty root sits AFTER the 360px canvas in normal flow. getCanvasBounds then
+   subtracts one map height from tooltip coordinates and the card is clipped away.
+   Scope to Streamlit maps; let their own controls retain pointer handling. */
+[data-testid="stDeckGlJsonChart"] .deck-widgets-root {
+  position: absolute; inset: 0; pointer-events: none;
+}
+
 /* Beach heroes */
 .st-key-hero-home, .st-key-hero-plan, .st-key-hero-fund { position: relative; border-radius: 28px; overflow: hidden;
   background: linear-gradient(180deg, rgba(11, 37, 69, 0.10), rgba(11, 37, 69, 0.28)), url("BEACH") center / cover no-repeat;
