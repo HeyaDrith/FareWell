@@ -23,6 +23,8 @@ class AppDraftTests(DemoAppCase):
             self.assertTrue(self.button("Create trip draft").disabled)
             self.gemini_on()
             self.assertTrue(self.button("Create trip draft").disabled)  # no GEMINI_API_KEY
+            self.assertIn("add `GEMINI_API_KEY=<your key>` to the `.env` file",
+                          "\n".join(c.value for c in self.app.caption))
             self.click("Load example draft (no API)")
             self.assertIn("Offline example draft", self.visible_text())
             extract.assert_not_called()
@@ -92,9 +94,9 @@ class AppDraftTests(DemoAppCase):
         self.assertNotIn("per-person limit", self.visible_text())
         self.assertEqual(self.app.number_input(key="trip_budget").value, 1500)
 
-    def test_gemini_draft_displays_conflicts_and_does_not_autofill(self):
+    def test_gaps_are_filled_so_the_draft_can_still_be_applied(self):
         _, result = trip_draft.example_draft()
-        result = result.model_copy(update={"origin": None, "depart": None,
+        result = result.model_copy(update={"origin": None, "depart": None, "return_date": None,
                                            "conflicts": ["The group proposed two different departure dates."]})
         with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
              patch("trip_draft.extract_trip", return_value=result) as extract:
@@ -103,12 +105,64 @@ class AppDraftTests(DemoAppCase):
             self.click("Create trip draft")
             extract.assert_called_once_with("We cannot agree on a weekend.", None, demo=False)
             self.assertIn("contains disagreements", self.visible_text())
+            # Nothing was written to the trip form yet.
             self.assertEqual(self.app.selectbox(key="trip_origin").value, "AUS")
-            self.assertEqual(self.app.text_input(key="draft_review_origin").value, "")
-            self.assertIsNone(self.app.date_input(key="draft_review_depart").value)
+            # The draft borrows the trip form's airport and suggests a week about a month out.
+            self.assertEqual(self.app.text_input(key="draft_review_origin").value, "AUS")
+            depart = date.today() + timedelta(days=30)
+            self.assertEqual(self.app.date_input(key="draft_review_depart").value, depart)
+            self.assertEqual(self.app.date_input(key="draft_review_return").value, depart + timedelta(days=7))
+            text = self.visible_text()
+            self.assertIn("Filled in so you can search right away", text)
+            self.assertIn("departure airport AUS (from your trip form)", text)
+            self.assertIn("the chat had no usable dates", text)
             self.acknowledge()
             self.click("Apply reviewed draft")
-            self.assertIn("Fill in both airports", self.visible_text())
+            self.assertIn("Draft applied", self.visible_text())
+            self.assertEqual(self.app.date_input(key="trip_depart").value, depart)
+
+    def test_picking_a_plan_from_a_disagreement_autofills_the_draft(self):
+        soon = date.today() + timedelta(days=60)
+        result = trip_draft.TripDraft(
+            conflicts=["Dallas to France vs Chicago to Italy."],
+            plans=[trip_draft.PlanOption(label="Dallas to France", origin="DFW", destination="CDG", city="Paris",
+                                         depart=soon, return_date=soon + timedelta(days=6)),
+                   trip_draft.PlanOption(label="Chicago to **Italy**", origin="ORD", destination="FCO", city="Rome",
+                                         depart=soon + timedelta(days=30), return_date=soon + timedelta(days=47))])
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
+             patch("trip_draft.extract_trip", return_value=result):
+            self.gemini_on()
+            self.app.text_area(key="ai_chat_0").set_value("Two ideas in the chat").run()
+            self.click("Create trip draft")
+            self.assertIn("Pick one of the plans below", self.visible_text())
+            plans = self.app.radio(key="draft_review_plan")
+            self.assertIsNone(plans.value)  # nothing chosen for the user
+            self.assertEqual(len(plans.options), 2)  # options are the formatted labels
+            self.assertTrue(plans.options[1].startswith("Chicago to Italy · ORD → FCO · "))  # markdown stripped
+            plans.set_value(1).run()
+            self.assertEqual(self.app.text_input(key="draft_review_origin").value, "ORD")
+            self.assertEqual(self.app.text_input(key="draft_review_destination").value, "FCO")
+            self.assertEqual(self.app.text_input(key="draft_review_city").value, "Rome")
+            self.assertEqual(self.app.date_input(key="draft_review_depart").value, soon + timedelta(days=30))
+            self.app.radio(key="draft_review_plan").set_value(0).run()  # switch plans
+            self.assertEqual(self.app.text_input(key="draft_review_city").value, "Paris")
+            self.acknowledge()
+            self.click("Apply reviewed draft")
+            self.assertEqual(self.app.selectbox(key="trip_origin").value, "DFW")
+            self.assertEqual(self.app.selectbox(key="trip_destination").value, "CDG")
+            self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in Paris")
+
+    def test_a_plan_without_dates_gets_suggested_dates(self):
+        result = trip_draft.TripDraft(plans=[trip_draft.PlanOption(label="Somewhere sunny", destination="MIA")])
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \
+             patch("trip_draft.extract_trip", return_value=result):
+            self.gemini_on()
+            self.app.text_area(key="ai_chat_0").set_value("Let's go somewhere sunny").run()
+            self.click("Create trip draft")
+            self.app.radio(key="draft_review_plan").set_value(0).run()
+            self.assertEqual(self.app.text_input(key="draft_review_destination").value, "MIA")
+            self.assertEqual(self.app.text_input(key="draft_review_city").value, "Miami")  # from the airport
+            self.assertEqual(self.app.date_input(key="draft_review_depart").value, date.today() + timedelta(days=30))
 
     def test_provider_failure_keeps_manual_trip_form_usable(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-not-a-key"}), \

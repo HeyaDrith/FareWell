@@ -54,6 +54,35 @@ class TripDraftTests(unittest.TestCase):
         self.assertFalse(factory.call_args.kwargs["http_options"].client_args["follow_redirects"])
         factory.return_value.__exit__.assert_called_once()
 
+    def test_plans_reach_gemini_in_a_ref_free_schema_and_come_back_validated(self):
+        reply = {"conflicts": ["France or Italy?"], "plans": [
+            {"label": "Dallas to France", "origin": "DFW", "destination": "CDG", "city": "Paris",
+             "depart": "2026-12-30", "return_date": "2027-01-05"},
+            {"label": "Chicago to Italy", "origin": "ORD", "destination": "FCO", "city": "Rome",
+             "depart": None, "return_date": None}]}
+        factory = self.client_reply(json.dumps(reply))
+        result = drafts.extract_trip("Two ideas", today=TODAY)
+        self.assertEqual([p.destination for p in result.plans], ["CDG", "FCO"])
+        self.assertEqual(result.plans[0].depart, date(2026, 12, 30))
+        schema = factory.return_value.__enter__.return_value.models.generate_content.call_args.kwargs[
+            "config"].response_json_schema
+        self.assertNotIn("$ref", json.dumps(schema))
+        self.assertIn("label", schema["properties"]["plans"]["items"]["properties"])
+        self.assertIn("plans", factory.return_value.__enter__.return_value.models.generate_content.call_args.kwargs[
+            "config"].system_instruction)
+
+    def test_bad_plans_are_rejected(self):
+        for bad in ({"label": "", "destination": "CDG"}, {"label": "x", "destination": "Paris"},
+                    {"label": "x", "transfer": "secret-sentinel"}):
+            with self.subTest(plan=bad):
+                self.client_reply(json.dumps({"plans": [bad]}))
+                with self.assertRaises(drafts.DraftError) as caught:
+                    drafts.extract_trip("Trip plans")
+                self.assertNotIn("secret-sentinel", str(caught.exception))
+        self.client_reply(json.dumps({"plans": [{"label": str(i)} for i in range(5)]}))  # at most 4
+        with self.assertRaises(drafts.DraftError):
+            drafts.extract_trip("Trip plans")
+
     def test_unknowns_and_conflicts_remain_explicit(self):
         factory = self.client_reply(json.dumps({"conflicts": ["Two departure dates were suggested."]}))
         result = drafts.extract_trip("People disagree on when to leave")

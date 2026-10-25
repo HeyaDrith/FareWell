@@ -2,11 +2,17 @@
 from datetime import date, timedelta
 from hashlib import sha256
 import os
+import re
 
 from pydantic import ValidationError
 import streamlit as st
 
+import travel
 import trip_draft
+
+# When the chat gives no usable dates, suggest a week-long trip about a month out, so the
+# draft can still be applied and searched (the user can change them before applying).
+SUGGEST_LEAD_DAYS, SUGGEST_NIGHTS = 30, 7
 
 
 def _fingerprint(text: str, image: bytes | None) -> str:
@@ -65,7 +71,8 @@ def render_draft_panel(demo: bool):
         if demo:
             st.caption("Demo mode makes no Gemini calls. Use the example, or turn off Demo mode for Gemini.")
         elif not has_key:
-            st.caption("Gemini is not configured yet. Use the example or the manual trip form.")
+            st.caption("Gemini is not configured yet: add `GEMINI_API_KEY=<your key>` to the `.env` file "
+                       "(or Streamlit secrets), then reload the page. Meanwhile, use the example or the manual form.")
         if st.button("Create trip draft", disabled=demo or not has_key or not (text.strip() or image)):
             # A failed new attempt must not leave an old draft looking current.
             st.session_state.pop("ai_draft", None)
@@ -91,7 +98,9 @@ def render_draft_panel(demo: bool):
         if draft.summary:
             st.text(draft.summary)
         if draft.conflicts:
-            st.warning("The conversation contains disagreements. Resolve these before applying the draft.")
+            st.warning("The conversation contains disagreements. " + (
+                "Pick one of the plans below to fill in the draft, or edit the fields yourself."
+                if draft.plans else "Resolve these before applying the draft."))
             for conflict in draft.conflicts:
                 st.text(conflict)
         questions = trip_draft.review_questions(draft)
@@ -102,35 +111,109 @@ def render_draft_panel(demo: bool):
         _render_review(draft)
 
 
+def _plain(text: str) -> str:
+    """Model-written text shown in a widget label: drop markdown/HTML syntax, keep the words."""
+    return re.sub(r"[\\`*_\[\]()#<>$|~]", "", str(text)).strip()
+
+
+def _fill(source, today: date) -> tuple[dict, list[str]]:
+    """Review-form values for the draft or a picked plan, with gaps filled so a search can run.
+
+    Missing airports come from the trip form, a missing hotel city from the arrival airport,
+    and missing or unusable dates become a suggested week about a month out. Returns the
+    widget values and a note for each filled-in value.
+    """
+    ss = st.session_state
+    latest = today + timedelta(days=3650)
+    notes = []
+    origin = source.origin or (ss.get("trip_origin") or "")
+    if origin and not source.origin:
+        notes.append(f"departure airport {origin} (from your trip form)")
+    destination = source.destination or (ss.get("trip_destination") or "")
+    if destination and not source.destination:
+        notes.append(f"arrival airport {destination} (from your trip form)")
+    city = source.city or travel.airport_city(destination) or ""
+    if city and not source.city:
+        notes.append(f"hotel city {_plain(city)} (from the arrival airport)")
+
+    def usable(day):
+        return day if day and today <= day <= latest else None
+    depart, ret = usable(source.depart), usable(source.return_date)
+    if depart and ret and ret <= depart:
+        ret = None
+    if not depart:
+        depart = (ret - timedelta(days=SUGGEST_NIGHTS) if ret and ret - timedelta(days=SUGGEST_NIGHTS) >= today
+                  else today + timedelta(days=SUGGEST_LEAD_DAYS))
+    if not ret or ret <= depart:
+        ret = depart + timedelta(days=SUGGEST_NIGHTS)
+    if (depart, ret) != (source.depart, source.return_date):
+        notes.append(f"dates {depart:%b %d} - {ret:%b %d, %Y} (the chat had no usable dates)"
+                     if not (usable(source.depart) or usable(source.return_date))
+                     else f"dates {depart:%b %d} - {ret:%b %d, %Y} (completed from the chat)")
+    values = {"draft_review_origin": origin, "draft_review_destination": destination,
+              "draft_review_city": city, "draft_review_depart": depart, "draft_review_return": ret}
+    return values, notes
+
+
+def _pick_plan():
+    """Picking a plan from the chat autofills the review form (runs before the widgets)."""
+    ss = st.session_state
+    choice = ss.get("draft_review_plan")
+    draft = trip_draft.TripDraft.model_validate(ss.ai_draft)
+    if choice is None or not 0 <= choice < len(draft.plans):
+        return
+    values, notes = _fill(draft.plans[choice], date.today())
+    ss.update(values)
+    ss.draft_review_notes = notes
+
+
+def _plan_label(plan: trip_draft.PlanOption) -> str:
+    route = " → ".join(code for code in (plan.origin, plan.destination) if code)
+    dates = (f"{plan.depart:%b %d} - {plan.return_date:%b %d}" if plan.depart and plan.return_date
+             else f"from {plan.depart:%b %d}" if plan.depart else "no dates given")
+    return " · ".join(part for part in (_plain(plan.label), route, dates) if part)
+
+
 def _render_review(draft: trip_draft.TripDraft):
+    ss = st.session_state
     today = date.today()
     latest = today + timedelta(days=3650)
+    if "draft_review_origin" not in ss:  # a new draft: start from it, gaps filled
+        values, notes = _fill(draft, today)
+        ss.update(values)
+        ss.draft_review_notes = notes
+        ss.update({"draft_review_travelers": draft.travelers,
+                   "draft_review_budget": "" if draft.budget is None else str(draft.budget),
+                   "draft_review_scope": draft.budget_scope, "draft_review_currency": draft.currency,
+                   "draft_review_interests": "\n".join(draft.interests)})
 
-    def editable_date(value):
-        return value if value and today <= value <= latest else None
+    if draft.plans:
+        st.write("**Pick a plan to fill in the draft**")
+        st.radio("Plans from the chat", range(len(draft.plans)), index=None, key="draft_review_plan",
+                 format_func=lambda i: _plan_label(draft.plans[i]), on_change=_pick_plan,
+                 label_visibility="collapsed")
+    if ss.get("draft_review_notes"):
+        # Notes are built by _fill from airport codes, dates and the airport table (city text
+        # cleaned there); "$" is escaped so markdown can't turn it into math.
+        st.info("Filled in so you can search right away (change anything below): "
+                + "; ".join(ss.draft_review_notes).replace("$", "\\$") + ".")
 
     with st.form("draft_review_form"):
         left, right = st.columns(2)
-        origin = left.text_input("Draft departure airport", draft.origin or "", key="draft_review_origin", max_chars=3)
-        destination = right.text_input("Draft arrival airport", draft.destination or "", key="draft_review_destination", max_chars=3)
-        city = st.text_input("Draft hotel city", draft.city or "", key="draft_review_city", max_chars=100)
-        depart = left.date_input("Draft departure date", editable_date(draft.depart), min_value=today,
-                                 max_value=latest, key="draft_review_depart")
-        return_date = right.date_input("Draft return date", editable_date(draft.return_date), min_value=today,
-                                       max_value=latest, key="draft_review_return")
-        travelers = left.number_input("Travelers (optional)", min_value=1, max_value=20,
-                                      value=draft.travelers, key="draft_review_travelers")
-        budget = right.text_input("Budget limit (optional)", "" if draft.budget is None else str(draft.budget),
-                                   key="draft_review_budget", max_chars=20)
+        origin = left.text_input("Draft departure airport", key="draft_review_origin", max_chars=3)
+        destination = right.text_input("Draft arrival airport", key="draft_review_destination", max_chars=3)
+        city = st.text_input("Draft hotel city", key="draft_review_city", max_chars=100)
+        depart = left.date_input("Draft departure date", min_value=today, max_value=latest, key="draft_review_depart")
+        return_date = right.date_input("Draft return date", min_value=today, max_value=latest, key="draft_review_return")
+        travelers = left.number_input("Travelers (optional)", min_value=1, max_value=20, key="draft_review_travelers")
+        budget = right.text_input("Budget limit (optional)", key="draft_review_budget", max_chars=20)
         scopes = ["unknown", "per_person", "group"]
-        scope = left.selectbox("Budget applies to", scopes, index=scopes.index(draft.budget_scope),
+        scope = left.selectbox("Budget applies to", scopes,
                                 format_func=lambda value: {"unknown": "Not sure yet", "per_person": "Each person", "group": "Whole group"}[value],
                                 key="draft_review_scope")
         currencies = ["unknown", "USD", "other"]
-        currency = right.selectbox("Budget currency", currencies, index=currencies.index(draft.currency),
-                                    key="draft_review_currency")
-        interests = st.text_area("Preferences (one per line, up to 8)", "\n".join(draft.interests),
-                                 max_chars=1920, key="draft_review_interests")
+        currency = right.selectbox("Budget currency", currencies, key="draft_review_currency")
+        interests = st.text_area("Preferences (one per line, up to 8)", max_chars=1920, key="draft_review_interests")
         st.caption("Group size, preferences, and group budgets are planning notes. Search currently quotes "
                    "one traveler and one room; it does not price the whole group or book activities.")
         acknowledged = st.checkbox("I reviewed the airports and dates and resolved any disagreements.",

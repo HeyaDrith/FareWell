@@ -20,6 +20,19 @@ class DraftError(ValueError):
     """Safe, user-facing error; never includes raw provider output or credentials."""
 
 
+class PlanOption(BaseModel):
+    """One plan someone proposed in the chat, so the user can pick between disagreements."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    label: Annotated[str, StringConstraints(min_length=1, max_length=80)] = Field(
+        description="Short name for this proposal, e.g. 'Dallas to France, Dec 30 - Jan 5'.")
+    origin: Airport | None = Field(None, description="Departure airport IATA code for this proposal.")
+    destination: Airport | None = Field(None, description="Arrival airport IATA code for this proposal.")
+    city: Annotated[str, StringConstraints(max_length=100)] | None = None
+    depart: date | None = None
+    return_date: date | None = None
+
+
 class TripDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
 
@@ -36,6 +49,24 @@ class TripDraft(BaseModel):
     conflicts: list[Note] = Field(default_factory=list, max_length=8)
     questions: list[Note] = Field(default_factory=list, max_length=8)
     summary: Annotated[str, StringConstraints(max_length=500)] = ""
+    plans: list[PlanOption] = Field(default_factory=list, max_length=4,
+                                    description="Each distinct plan proposed when people disagree.")
+
+
+def gemini_schema() -> dict:
+    """TripDraft's JSON schema with $ref/$defs inlined (nested models as plain objects)."""
+    schema = TripDraft.model_json_schema()
+    defs = schema.pop("$defs", {})
+
+    def resolve(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return resolve(defs[node["$ref"].rsplit("/", 1)[-1]])
+            return {key: resolve(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [resolve(value) for value in node]
+        return node
+    return resolve(schema)
 
 
 def review_questions(draft: TripDraft, today: date | None = None) -> list[str]:
@@ -117,7 +148,13 @@ without names in conflicts, and ask what to use. Resolve relative dates only whe
 reference date and the intended dates are unambiguous. Do not infer travelers by
 counting chat authors. Summarize travel preferences only; omit names, contact details,
 credentials, payment information, and irrelevant conversation. Interests are notes,
-not a priced or verified itinerary. A person will review every field before use."""
+not a priced or verified itinerary. A person will review every field before use.
+When people propose different trips (destinations, routes, or dates), also list each distinct
+proposal in plans, with a short label and the origin, destination, hotel city, and dates that
+proposal states. For plans only, you may suggest the main international airport for a named
+city or country (for example Dallas -> DFW, Chicago -> ORD, France -> CDG with city Paris,
+Italy -> FCO with city Rome); the person picks and confirms a plan. Write month/day dates as
+the next occurrence on or after the reference date. Never add a plan nobody proposed."""
 
 
 def extract_trip(text: str = "", image: bytes | None = None, *,
@@ -153,7 +190,7 @@ def extract_trip(text: str = "", image: bytes | None = None, *,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION, temperature=0,
                     max_output_tokens=3000, response_mime_type="application/json",
-                    response_json_schema=TripDraft.model_json_schema(),
+                    response_json_schema=gemini_schema(),
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),
             )
