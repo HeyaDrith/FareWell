@@ -13,6 +13,15 @@ import trip_draft
 # When the chat gives no usable dates, suggest a week-long trip about a month out, so the
 # draft can still be applied and searched (the user can change them before applying).
 SUGGEST_LEAD_DAYS, SUGGEST_NIGHTS = 30, 7
+PANEL_KEY = "chat_panel"  # the panel's open/closed state, set by the start choices and the homepage link
+
+
+def open_panel():
+    st.session_state[PANEL_KEY] = True
+
+
+def close_panel():
+    st.session_state[PANEL_KEY] = False
 
 
 def _fingerprint(text: str, image: bytes | None) -> str:
@@ -48,7 +57,7 @@ def _load_example():
 
 
 def render_draft_panel(demo: bool):
-    with st.expander("Turn our group chat into a trip", expanded=False):
+    with st.expander("Plan from your group chat", icon="💬", key=PANEL_KEY, on_change="rerun"):
         st.write("Paste the plans everyone has been discussing, or add a screenshot. Review the draft before using it.")
         st.caption("When you click Create trip draft, the submitted text and screenshot pixels go to Google Gemini. "
                    "Remove names and private details first. The app does not save uploads to disk.")

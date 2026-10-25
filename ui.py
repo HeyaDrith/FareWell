@@ -117,6 +117,13 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 .ts-hero-sub { color: #FFFFFF; font-weight: 600; font-size: 1.05rem; text-shadow: 0 1px 10px rgba(11, 37, 69, 0.45); margin: -0.4rem 0 0.6rem; }
 .st-key-hero-plan [data-baseweb="select"] > div { min-height: 54px; font-size: 1.05rem;
   box-shadow: 0 10px 26px rgba(11, 37, 69, 0.22); border: 2px solid rgba(255, 255, 255, 0.9) !important; }
+/* The two ways to start, and the homepage's group-chat link: white pills on the beach */
+.ts-hero-or { margin: 0.5rem 0 0.1rem; }
+.st-key-start_form button, .st-key-start_chat button { min-height: 48px; font-weight: 600; background: #FFFFFF !important;
+  border: 2px solid rgba(255, 255, 255, 0.9); box-shadow: 0 8px 20px rgba(11, 37, 69, 0.2); }
+.st-key-start_form button:hover, .st-key-start_chat button:hover { border-color: var(--ts-ocean); }
+.st-key-hero-home [data-testid="stPageLink"] a { background: #FFFFFF; border-radius: 999px; padding: 8px 18px;
+  margin-top: 14px; font-weight: 600; box-shadow: 0 8px 20px rgba(11, 37, 69, 0.2); }
 
 /* Frosted-glass dashboard cards */
 .ts-glass-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }

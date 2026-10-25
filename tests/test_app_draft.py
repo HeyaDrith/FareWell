@@ -2,9 +2,12 @@ import os
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
+from streamlit.testing.v1 import AppTest
+
 import bank
+import draft_ui
 import trip_draft
-from app_support import DemoAppCase
+from app_support import APP, DemoAppCase
 
 
 class AppDraftTests(DemoAppCase):
@@ -16,6 +19,26 @@ class AppDraftTests(DemoAppCase):
 
     def gemini_on(self):
         self.app.toggle(key="demo_ai").set_value(False).run()
+
+    def test_start_choices_open_and_close_the_chat_panel(self):
+        self.assertFalse(self.app.session_state[draft_ui.PANEL_KEY])  # closed until asked for
+        self.click("💬 Paste your group chat")
+        self.assertTrue(self.app.session_state[draft_ui.PANEL_KEY])
+        self.app.text_area(key="ai_chat_0").set_value("Beach week in March?").run()
+        self.click("✍️ Fill in the details")
+        self.assertFalse(self.app.session_state[draft_ui.PANEL_KEY])
+        self.assertEqual(self.app.text_area(key="ai_chat_0").value, "Beach week in March?")  # kept while closed
+
+    def test_homepage_link_opens_the_planner_with_the_chat_panel_open(self):
+        home = AppTest.from_file(str(APP), default_timeout=15).run()
+        link = next(p for p in home.get("page_link") if "group chat" in p.proto.label)
+        self.assertTrue(link.proto.page.endswith("plan"))
+        self.assertIn("start=chat", link.proto.query_string)
+        home.query_params["start"] = "chat"
+        home.switch_page("views/plan.py").run()
+        self.assertEqual(len(home.exception), 0)
+        self.assertTrue(home.session_state[draft_ui.PANEL_KEY])
+        self.assertNotIn("start", home.query_params)  # once only
 
     def test_demo_and_missing_key_do_not_call_gemini(self):
         with patch("trip_draft.extract_trip") as extract:

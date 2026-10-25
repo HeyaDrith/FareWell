@@ -166,7 +166,10 @@ class AppTripTests(DemoAppCase):
     def test_recommendations_badges_and_budget_split(self):
         text = self.plain_text()
         self.assertIn("Suggested split of what's left: ✈️ Flights $525 · 🏨 Hotel $600 · "
-                      "🍽️ Food $225 · 🎟️ Activities $150 (food ≈ $28/day)", text)
+                      "🧾 Other expenses $375 (food ≈ $28/day)", text)  # food $225 + activities $150
+        self.assertIn("Other expenses", [s.value for s in self.app.subheader])
+        self.assertIn("Food, activities and anything else you'll pay for on the trip. "
+                      "Food budget ≈ $28/day for 8 days.", text)
         self.assertIn("Recommended: Volaris** ($438), best quality that fits your $525 flight budget.", text)
         self.assertIn("**Southwest** · 3h 15m · Nonstop  \n💰 Cheapest", text)
         self.assertIn("**American** · 4h 45m · 1 stop", text)
@@ -224,10 +227,19 @@ class AppTripTests(DemoAppCase):
         line = next(m.value for m in self.app.markdown if "Website ↗" in m.value)
         self.assertIn("[Website ↗](https://hotel.example/rooms%20%28deluxe%29)", line)
 
+    def decks(self):
+        return [json.loads(d.proto.json) for d in self.app.get("deck_gl_json_chart")]
+
+    def show_map(self, label):
+        next(r for r in self.app.radio if r.key == "map_view").set_value(label).run()
+
     def test_map_shows_flight_path_and_hotels(self):
-        decks = [json.loads(d.proto.json) for d in self.app.get("deck_gl_json_chart")]
-        self.assertEqual([t.label for t in self.app.tabs], ["✈️ Flight path", "🏨 Hotels on the map"])
-        route, hotels = decks
+        toggle = next(r for r in self.app.radio if r.key == "map_view")
+        self.assertEqual(toggle.options, ["✈️ Flight path", "🏨 Hotels on the map"])
+        (route,) = self.decks()  # only the chosen map is drawn, so its hover cards work
+        self.show_map("🏨 Hotels on the map")
+        (hotels,) = self.decks()
+        decks = [route, hotels]
         # Start/end halos, white arc casing, colored arcs, airport dots on top.
         self.assertEqual([layer["@@type"] for layer in route["layers"]],
                          ["ScatterplotLayer", "ArcLayer", "ArcLayer", "ScatterplotLayer"])
@@ -242,6 +254,14 @@ class AppTripTests(DemoAppCase):
         for deck in decks:  # neither map can be tilted or spun by dragging
             self.assertEqual(deck["views"][0]["controller"], {"dragRotate": False, "touchRotate": False})
         self.assertEqual(len(hotels["layers"][0]["data"]), 3)  # every sample hotel has a location
+        self.assertIn("<b>{title}</b>", json.loads(self.app.get("deck_gl_json_chart")[0].proto.tooltip)["html"])
+        card = hotels["layers"][0]["data"][0]
+        self.assertIn("/night", card["detail"])
+        self.assertIn("★ rating", card["rating"])
+        for row in route["layers"][2]["data"] + route["layers"][3]["data"]:  # arcs and airports get cards too
+            self.assertLessEqual({"title", "detail", "rating", "note", "tone"}, set(row))
+        self.assertIn("Hotels near", self.plain_text())
+        self.show_map("✈️ Flight path")
         text = self.plain_text()
         self.assertIn("Volaris: AUS → CUN (nonstop)", text)
         self.assertIn("🟢 **Start** AUS · Austin  →  🔴 **End** CUN · Cancún", text)
@@ -258,7 +278,8 @@ class AppTripTests(DemoAppCase):
         self.add("flight-0")  # adding Southwest switches the map to it
         self.assertIn("Southwest: AUS → CUN (nonstop)", self.plain_text())
         self.add("hotel-0")
-        hotels = json.loads(self.app.get("deck_gl_json_chart")[1].proto.json)["layers"][0]["data"]
+        self.show_map("🏨 Hotels on the map")
+        hotels = self.decks()[0]["layers"][0]["data"]
         self.assertEqual(hotels[0]["status"], "picked")  # Seaside Budget Inn
         self.assertNotIn("picked", [h["status"] for h in hotels[1:]])
 
