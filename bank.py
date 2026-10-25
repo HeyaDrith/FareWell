@@ -5,7 +5,7 @@ Two features share this module:
     list_picks, get_summary. The user's typed budget becomes a "Trip Budget" account; every
     option they pick is a purchase on it, and money saved vs. the typical price is a deposit
     into a "Trip Savings" account.
-  * Trip Fund savings (kept for a future "save for it" step): setup_accounts, get_balance,
+  * Trip Fund savings (used by the Financial Planner): setup_accounts, get_balance,
     transfer.
 
 Nessie is a sandbox: accounts and money are fake. Docs: https://nessieisreal.com

@@ -80,7 +80,7 @@ with trip_tile.container(key="tile-trip"):
 with fin_tile.container(key="tile-fin"):
     st.markdown("### Financial Planner")
     st.caption("Save toward a trip with weekly transfers from checking into a Trip Fund "
-               "(Capital One Nessie). The banking side is built; the page is next.")
-    st.html("<span class='ts-soon'>Coming soon</span>")
+               "(Capital One Nessie). Set a deadline and watch your fund grow.")
+    st.page_link("views/fund.py", label="Grow your Trip Fund", icon=":material/savings:")
 
 ui.powered_by()

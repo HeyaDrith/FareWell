@@ -466,10 +466,11 @@ with st.container(key="card-lock"):
             if confirmed:
                 # Keep a record for the homepage's Travel History (this browser session only).
                 history = ss.setdefault("trip_history", [])
-                if all(t["confirmation"] != confirmed["confirmation"] for t in history):
-                    history.insert(0, {"confirmation": confirmed["confirmation"], "route": f"{origin} → {dest}",
-                                       "place": place, "dates": f"{depart:%b %d} – {ret:%b %d, %Y}",
-                                       "total": confirmed["final_total"], "saved": confirmed["saved"]})
+                entry = {"confirmation": confirmed["confirmation"], "route": f"{origin} → {dest}",
+                         "place": place, "dates": f"{depart:%b %d} – {ret:%b %d, %Y}",
+                         "total": confirmed["final_total"], "saved": confirmed["saved"]}
+                # Re-locking edits the same trip; refresh its totals instead of keeping the first snapshot.
+                history[:] = [entry] + [t for t in history if t["confirmation"] != entry["confirmation"]]
                 ss.celebrate = True
                 st.rerun()
 

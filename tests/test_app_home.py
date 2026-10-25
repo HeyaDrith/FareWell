@@ -29,7 +29,7 @@ class HomePageTests(DemoAppCase):
         self.assertIn("Stay on budget", html)
         self.assertIn("2/4", html)  # flight + hotel of the four parts
         self.assertEqual([p.proto.label for p in self.app.get("page_link")],
-                         ["Paste your group chat → get a trip draft", "Continue planning"])
+                         ["Paste your group chat → get a trip draft", "Continue planning", "Grow your Trip Fund"])
 
         self.app.switch_page("views/plan.py").run()
         self.click("🔒 Lock in my trip")
@@ -46,6 +46,19 @@ class HomePageTests(DemoAppCase):
         self.click("Unlock to make changes")
         self.click("🔒 Lock in my trip")  # same trip, same confirmation number
         self.assertEqual(len(self.app.session_state.trip_history), 1)
+
+    def test_relocking_refreshes_history_totals(self):
+        self.add("flight-0")
+        self.click("🔒 Lock in my trip")
+        self.click("Unlock to make changes")
+        self.add("hotel-0")
+        self.click("🔒 Lock in my trip")
+        history = self.app.session_state.trip_history
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["total"], 1035)
+        self.assertEqual(history[0]["saved"], 327)
+        self.go_home()
+        self.assertIn("1 trip · $1,035.00", self.html())
 
     def test_user_text_is_escaped_in_the_dashboard(self):
         self.app.text_input(key="trip_city").input("hotels in <b>Tulum</b>").run()
@@ -64,11 +77,11 @@ class FreshHomePageTests(unittest.TestCase):
             app = AppTest.from_file(str(APP), default_timeout=15).run()
         self.assertEqual(len(app.exception), 0)
         html = "\n".join(element.proto.body for element in app.get("html"))
-        for empty in ("No trip budget yet", "No trips yet", "No goals yet", "Coming soon"):
+        for empty in ("No trip budget yet", "No trips yet", "No goals yet"):
             self.assertIn(empty, html)
         self.assertNotIn("$", html.split("ts-powered")[0].split("<style>")[0])  # no made-up amounts
         self.assertEqual([p.proto.label for p in app.get("page_link")],
-                         ["Paste your group chat → get a trip draft", "Start a trip"])
+                         ["Paste your group chat → get a trip draft", "Start a trip", "Grow your Trip Fund"])
         self.assertEqual([t.label for t in app.toggle][:2],
                          ["Sample travel prices (no SerpApi calls)", "Demo bank (no Nessie calls)"])
 

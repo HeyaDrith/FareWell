@@ -9,7 +9,7 @@ Nessie sandbox. Built at HackTX 26.
   Nessie Budget and Savings accounts, **Travel History** lists trips locked in during this browser
   session, and **Active Goals** tracks budget use, planning progress and lock-in. With nothing
   planned yet the cards show empty states, never sample numbers. Tiles open the **Trip Planner**;
-  the **Financial Planner** (weekly Trip Fund transfers) is marked coming soon.
+  the **Financial Planner** provides manual weekly Trip Fund contributions.
 - **Trip Planner** (`/plan`): everything below. The **Data sources** menu (top right, every page)
   holds the sample-prices / demo-bank / demo-AI switches.
 
@@ -149,10 +149,10 @@ python -m unittest discover -s tests -p test_planner.py -v
 | `.streamlit/config.toml` | Light theme colors and rounded corners |
 | `travel.py` | SerpApi flights + hotels (routes, hotel coordinates), booking/search links, airport lookup |
 | `trip_map.py` | Flight path and hotel maps (pydeck, included with Streamlit) |
-| `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers, not used by the UI) |
+| `bank.py` | Nessie trip budget tracker (+ Trip Fund transfers used by the Financial Planner) |
 | `planner.py` | Typical price, savings, budget split and Recommended/Cheapest/Best quality (+ weekly savings math) |
 
-## Trip Fund transfer contract (kept in `bank.py`, not shown in the UI yet)
+## Trip Fund transfer contract (kept in `bank.py`, used by the Financial Planner)
 - Existing `setup_accounts(demo=False)`, `get_balance(account_id, demo=False)`,
   and `transfer(from_id, to_id, amount, demo=False)` signatures remain unchanged.
 - Demo account IDs are opaque and unique per account pair. Always use the IDs returned
@@ -203,3 +203,28 @@ python -m unittest discover -s tests -p test_planner.py -v
 - [ ] What it does / how we built it / challenges / what's next
 - [ ] Demo link + 1-minute video
 - [ ] Tracks: SerpApi, Capital One (+ Best Overall / Novice)
+
+## Weekly Financial Planner
+Open **Financial Planner** in the top navigation or **Grow your Trip Fund** on Home.
+Set a whole-dollar target and a deadline on or before your trip departure. **Use current
+trip cost** imports the latest picks (or the budget when there are no picks). Updating
+the plan preserves the fund balance; importing a revised trip cost is explicit.
+
+Create a Trip Fund, then use **Run this week's transfer** to contribute manually.
+The page shows funded/remaining amounts, checking balance, a projected schedule and
+contribution history. Contributions round up to whole dollars; the final one is capped
+at the remaining target. Nothing runs automatically.
+
+Demo contributions advance the plan by a week for judging. Nessie permits one contribution
+per scheduled week. Demo and Nessie funds are separate and survive page navigation in
+the same browser session. Checking begins with $3,000 of simulated money. These fund
+contributions are separate from the price-comparison savings on the trip budget.
+
+If a live transfer is uncertain, further contributions are blocked. **Refresh balances**
+releases the block only when both the expected withdrawal and deposit are reflected in
+the balances. A partial or otherwise unresolved result needs manual Nessie reconciliation;
+the app never automatically retries it. Session state and demo balances are not durable
+across session loss/server restarts.
+
+Re-locking an edited trip now updates its existing Travel History entry, including cost
+and savings, rather than retaining the original totals.

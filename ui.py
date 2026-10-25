@@ -108,10 +108,10 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
   border-color: #C0392B !important; background: #FDECEA; }
 
 /* Beach heroes */
-.st-key-hero-home, .st-key-hero-plan { position: relative; border-radius: 28px; overflow: hidden;
+.st-key-hero-home, .st-key-hero-plan, .st-key-hero-fund { position: relative; border-radius: 28px; overflow: hidden;
   background: linear-gradient(180deg, rgba(11, 37, 69, 0.10), rgba(11, 37, 69, 0.28)), url("BEACH") center / cover no-repeat;
   padding: 34px 30px 30px; box-shadow: 0 18px 40px rgba(11, 37, 69, 0.18); }
-.st-key-hero-plan h1, .st-key-hero-plan h1 *, .st-key-hero-home h1, .st-key-hero-home h1 * {
+.st-key-hero-fund h1, .st-key-hero-fund h1 *, .st-key-hero-plan h1, .st-key-hero-plan h1 *, .st-key-hero-home h1, .st-key-hero-home h1 * {
   color: #FFFFFF !important; text-shadow: 0 2px 16px rgba(11, 37, 69, 0.45); font-size: 3rem; }
 .st-key-hero-plan [data-baseweb="select"] > div { background: #FFFFFF !important; }
 .ts-hero-sub { color: #FFFFFF; font-weight: 600; font-size: 1.05rem; text-shadow: 0 1px 10px rgba(11, 37, 69, 0.45); margin: -0.4rem 0 0.6rem; }
@@ -153,9 +153,9 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 .st-key-tile-trip { background: linear-gradient(135deg, #DCEAF7, #C7E3F6); }
 .st-key-tile-fin { background: linear-gradient(135deg, #EEF2F7, #E3E9F0); }
 [class*="st-key-tile-"] h3 { font-size: 2rem; margin: 0 0 4px; }
-.st-key-tile-trip [data-testid="stPageLink"] a { background: linear-gradient(135deg, var(--ts-coral), var(--ts-sun));
+.st-key-tile-fin [data-testid="stPageLink"] a, .st-key-tile-trip [data-testid="stPageLink"] a { background: linear-gradient(135deg, var(--ts-coral), var(--ts-sun));
   border-radius: 999px; padding: 6px 18px; box-shadow: 0 8px 20px rgba(255, 107, 87, 0.35); }
-.st-key-tile-trip [data-testid="stPageLink"] a p { color: #FFFFFF !important; font-weight: 700; }
+.st-key-tile-fin [data-testid="stPageLink"] a p, .st-key-tile-trip [data-testid="stPageLink"] a p { color: #FFFFFF !important; font-weight: 700; }
 .ts-soon { display: inline-block; background: #FFFFFF; border: 1px dashed #A9BCD0; color: var(--ts-ink);
   border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; font-weight: 600; }
 

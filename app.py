@@ -3,7 +3,7 @@
 Run:  streamlit run app.py
 
 This file is the router: shared setup, the data-source switches and the top navigation.
-The pages are views/home.py (dashboard) and views/plan.py (the trip planner).
+Pages: views/home.py (dashboard), views/plan.py (trip planner), views/fund.py (weekly funding).
 """
 import os
 from pathlib import Path
@@ -30,7 +30,8 @@ ui.inject_css()
 
 home = st.Page("views/home.py", title="Home", icon=":material/home:", default=True)
 plan = st.Page("views/plan.py", title="Trip Planner", icon=":material/flight_takeoff:", url_path="plan")
-page = st.navigation([home, plan], position="top")
+fund = st.Page("views/fund.py", title="Financial Planner", icon=":material/savings:", url_path="fund")
+page = st.navigation([home, plan, fund], position="top")
 
 # Data-source switches live in a small settings menu on every page, so each API key works on
 # its own and the choice carries between pages. (Order matters to the tests: search, bank, AI.)
