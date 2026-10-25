@@ -228,19 +228,31 @@ class AppTripTests(DemoAppCase):
         decks = [json.loads(d.proto.json) for d in self.app.get("deck_gl_json_chart")]
         self.assertEqual([t.label for t in self.app.tabs], ["✈️ Flight path", "🏨 Hotels on the map"])
         route, hotels = decks
-        self.assertEqual([layer["@@type"] for layer in route["layers"]], ["ArcLayer", "ScatterplotLayer"])
-        self.assertEqual([p["label"] for p in route["layers"][1]["data"]], ["AUS · Austin", "CUN · Cancún"])
-        self.assertEqual(len(route["layers"][0]["data"]), 1)  # recommended Volaris: nonstop AUS -> CUN
+        # Flat route (white casing + line), direction arrows, start/end halos, airport dots.
+        self.assertEqual([layer["@@type"] for layer in route["layers"]],
+                         ["PathLayer", "PathLayer", "PolygonLayer", "ScatterplotLayer", "ScatterplotLayer"])
+        self.assertNotIn("ArcLayer", json.dumps(route))  # no 3D arches
+        self.assertEqual([p["label"] for p in route["layers"][4]["data"]], ["Start: AUS · Austin", "End: CUN · Cancún"])
+        self.assertEqual(len(route["layers"][1]["data"]), 1)  # recommended Volaris: nonstop AUS -> CUN
+        self.assertEqual(len(route["layers"][2]["data"]), 1)  # one arrow on that leg
         self.assertLess(route["initialViewState"]["zoom"], 6)
+        for deck in decks:  # both maps stay flat and north-up
+            self.assertEqual(deck["views"][0]["controller"], {"dragRotate": False, "touchRotate": False})
+            self.assertEqual(deck["initialViewState"].get("pitch", 0), 0)
         self.assertEqual(len(hotels["layers"][0]["data"]), 3)  # every sample hotel has a location
-        self.assertIn("Volaris: AUS → CUN (nonstop)", self.plain_text())
+        text = self.plain_text()
+        self.assertIn("Volaris: AUS → CUN (nonstop)", text)
+        self.assertIn("🟢 **Start** AUS · Austin  →  🔴 **End** CUN · Cancún", text)
 
     def test_map_follows_the_selected_and_added_flight(self):
         selector = next(s for s in self.app.selectbox if s.label == "Show the flight path for")
         selector.set_value(2).run()  # American, 1 stop via DFW
         route = json.loads(self.app.get("deck_gl_json_chart")[0].proto.json)
-        self.assertEqual([p["label"] for p in route["layers"][0]["data"]], ["AUS → DFW", "DFW → CUN"])
+        self.assertEqual([p["label"] for p in route["layers"][1]["data"]], ["AUS → DFW", "DFW → CUN"])
+        self.assertEqual([p["label"] for p in route["layers"][4]["data"]],
+                         ["Start: AUS · Austin", "Layover: DFW · Dallas-Fort Worth", "End: CUN · Cancún"])
         self.assertIn("American: AUS → DFW → CUN (layover in DFW)", self.plain_text())
+        self.assertIn("🟢 **Start** AUS · Austin  →  🟡 DFW  →  🔴 **End** CUN", self.plain_text())
         self.add("flight-0")  # adding Southwest switches the map to it
         self.assertIn("Southwest: AUS → CUN (nonstop)", self.plain_text())
         self.add("hotel-0")
@@ -294,6 +306,19 @@ class AppTripTests(DemoAppCase):
         self.app.selectbox(key="trip_destination").select("SJU").run()
         self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in San Juan")
         self.assertIn("Trip details changed", self.visible_text())
+
+    def test_form_has_from_and_to_and_the_hero_search_stays_in_sync(self):
+        labels = [s.label for s in self.app.selectbox]
+        self.assertIn("From", labels)
+        self.assertIn("To", labels)
+        hero = self.app.selectbox(key="hero_destination")
+        self.assertEqual(hero.value, "CUN")  # mirrors the form's To field
+        hero.select("SJU").run()  # searching in the hero sets To and the hotel search
+        self.assertEqual(self.app.selectbox(key="trip_destination").value, "SJU")
+        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in San Juan")
+        self.app.selectbox(key="trip_destination").select("MIA").run()  # and the other way round
+        self.assertEqual(self.app.selectbox(key="hero_destination").value, "MIA")
+        self.assertEqual(self.app.text_input(key="trip_city").value, "hotels in Miami")
 
     def test_typed_airport_code_is_uppercased_and_empty_stays_empty(self):
         # Typed text arrives as the widget value (accept_new_options); codes are uppercased.

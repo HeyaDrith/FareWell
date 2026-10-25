@@ -44,10 +44,39 @@ class FlightPathTests(unittest.TestCase):
 
     def test_airport_colors(self):
         stops = trip_map.flight_path(["AUS", "DFW", "CUN"], "AUS", "CUN")
-        colors = [row["color"] for row in trip_map._airport_layers(stops)[0].data]
-        self.assertEqual(colors, [trip_map.ORIGIN_RGB, trip_map.LAYOVER_RGB, trip_map.DEST_RGB])
+        dots, halos = trip_map._airport_layers(stops)
+        self.assertEqual([row["color"] for row in dots.data], [trip_map.ORIGIN_RGB, trip_map.LAYOVER_RGB, trip_map.DEST_RGB])
+        self.assertEqual([row["role"] for row in dots.data], ["Start", "Layover", "End"])
+        self.assertEqual([row["role"] for row in halos.data], ["Start", "End"])  # only the ends get a halo
+        self.assertGreater(dots.data[0]["radius"], dots.data[1]["radius"])  # ends are bigger than layovers
         lone = trip_map._airport_layers(stops[-1:])[0].data  # the hotels map shows only the destination
-        self.assertEqual(lone[0]["color"], trip_map.DEST_RGB)
+        self.assertEqual((lone[0]["color"], lone[0]["role"]), (trip_map.DEST_RGB, "End"))
+        self.assertNotEqual(trip_map.ORIGIN_RGB, trip_map.DEST_RGB)
+
+    def test_route_geometry_is_flat_legs_with_arrows_pointing_forward(self):
+        stops = trip_map.flight_path(["AUH", "IST", "MEX", "CUN"], "AUH", "CUN")
+        shape = trip_map.route_geometry(stops)
+        self.assertEqual([leg["label"] for leg in shape["legs"]], ["AUH → IST", "IST → MEX", "MEX → CUN"])
+        for leg in shape["legs"]:
+            self.assertEqual(len(leg["path"]), 2)  # straight, not an arch
+        # MEX → CUN is a short hop on a world-sized map, so only the long legs carry arrows.
+        self.assertEqual([a["label"] for a in shape["arrows"]], ["AUH → IST", "IST → MEX"])
+        for arrow in shape["arrows"]:
+            a, b = next((leg["path"] for leg in shape["legs"] if leg["label"] == arrow["label"]))
+            tip, base1, base2 = arrow["polygon"]
+            # The tip sits closer to the destination than the arrow's base does.
+            base = [(base1[0] + base2[0]) / 2, (base1[1] + base2[1]) / 2]
+            self.assertLess(math.dist(tip, b), math.dist(base, b))
+
+    def test_short_hop_gets_no_arrow(self):
+        stops = trip_map.flight_path(["AUS", "DFW", "LHR"], "AUS", "LHR")
+        labels = [a["label"] for a in trip_map.route_geometry(stops)["arrows"]]
+        self.assertEqual(labels, ["DFW → LHR"])  # AUS → DFW is too short next to the ocean crossing
+
+    def test_route_over_the_date_line_stays_continuous(self):
+        stops = trip_map.flight_path(["LAX", "NRT"], "LAX", "NRT")
+        (lax, nrt) = trip_map.route_geometry(stops)["positions"]
+        self.assertLess(abs(nrt[0] - lax[0]), 180)  # across the Pacific, not around the world
 
     def test_distance(self):
         aus, cun = travel.airport_location("AUS"), travel.airport_location("CUN")

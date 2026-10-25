@@ -66,6 +66,12 @@ def follow_destination():
         ss.trip_city = f"hotels in {travel.airport_city(code)}"
 
 
+def from_hero_search():
+    """The hero search box is a shortcut for the form's To field."""
+    ss.trip_destination = ss.get("hero_destination")
+    follow_destination()
+
+
 # ---- Hero: title, tagline and the destination search ----
 hero = st.container(key="hero-plan")
 with hero:
@@ -82,18 +88,22 @@ ui.steps(3 if locked_now else 2 if has_trip else 1, {1, 2, 3} if locked_now else
 draft_ui.render_draft_panel(demo_ai)
 
 with hero:  # filled in after the draft panel, but shown inside the hero above it
-    dest = (st.selectbox("Where to?", airports, index=None, key="trip_destination", format_func=travel.airport_label,
-                         accept_new_options=True, placeholder="🔍  Search for a destination…",
-                         label_visibility="collapsed", on_change=follow_destination) or "").strip().upper()
+    ss.hero_destination = ss.get("trip_destination")  # mirror the form's To field
+    st.selectbox("Where to?", airports, index=None, key="hero_destination", format_func=travel.airport_label,
+                 accept_new_options=True, placeholder="🔍  Search for a destination…",
+                 label_visibility="collapsed", on_change=from_hero_search)
 
 # ---- 1. Trip details ----
 with st.container(key="card-trip"):
     st.header("1. Your trip")
+    budget = st.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
     c1, c2 = st.columns(2)
-    budget = c1.number_input("Total trip budget ($)", min_value=50, max_value=50000, step=50, key="trip_budget")
-    origin = (c2.selectbox("From", airports, index=None, key="trip_origin", format_func=travel.airport_label,
+    origin = (c1.selectbox("From", airports, index=None, key="trip_origin", format_func=travel.airport_label,
                            accept_new_options=True, placeholder="Type a city or airport code")
               or "").strip().upper()
+    dest = (c2.selectbox("To", airports, index=None, key="trip_destination", format_func=travel.airport_label,
+                         accept_new_options=True, placeholder="Type a city or airport code",
+                         on_change=follow_destination) or "").strip().upper()
     depart = c1.date_input("Depart", value=None, key="trip_depart")
     ret = c2.date_input("Return", value=None, key="trip_return")
     city = st.text_input("Hotel search", key="trip_city") or ""
