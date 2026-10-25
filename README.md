@@ -230,3 +230,28 @@ across session loss/server restarts.
 
 Re-locking an edited trip now updates its existing Travel History entry, including cost
 and savings, rather than retaining the original totals.
+
+## Publish FareWell on Streamlit Community Cloud
+
+1. Sign in at https://share.streamlit.io with the GitHub account that can access this repository.
+2. Select **Create app** and deploy from **HeyaDrith/FareWell**.
+3. Select branch **main** and main file **app.py**.
+4. Under **Advanced settings**, choose **Python 3.12**. The exact direct dependency
+   versions are recorded in `requirements.txt`; Pydeck is included explicitly.
+5. For a first demo deployment, leave Secrets empty. All three integrations have
+   demo modes. To enable live integrations, add the corresponding values using
+   `.streamlit/secrets.toml.example` as the TOML template in Cloud's Secrets editor.
+   Do not upload `.env`, commit secrets, or paste API keys into GitHub issues.
+6. Choose an available app subdomain (try `farewell-hacktx`) and click **Deploy**.
+7. Check Home, Trip Planner, and Financial Planner on the public URL. Run a demo
+   search, add a flight/hotel, and create a Trip Fund with a simulated contribution.
+   Test Gemini separately if its key is configured.
+
+Community Cloud rebuilds the app when its source on `main` changes. Avoid merging
+untested changes immediately before judging. Session state is temporary: browser
+session loss or server restarts can lose plans and demo balances. There is no shared
+persistent database yet. Configured live API keys are server-side, but visitors'
+requests use the associated API quotas. Keep a local demo available for judging.
+
+Local fallback: `streamlit run app.py`. A public URL exists only after Cloud finishes
+building; add that verified URL to Devpost and this README after deployment.
