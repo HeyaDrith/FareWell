@@ -162,6 +162,10 @@ remaining = summary["remaining"]
 locked = trip.get("locked")
 links = ss.setdefault("links", {})  # pick id -> [(button label, url), ...]
 picked = {p["category"] for p in summary["picks"]}
+# Which listed option each pick came from, so its row can show "Added" and offer Remove.
+pick_ids = {(p["category"], p["description"]): p["id"] for p in summary["picks"]}
+if notice := ss.pop("pick_notice", None):  # confirm the last add/remove after the rerun
+    st.toast(notice)
 days = max(1, (ret - depart).days + 1)
 place = city.removeprefix("hotels in ").strip() or dest
 
@@ -192,8 +196,10 @@ with st.container(key="card-budget"):
                    + (f" (food ≈ {money(allowance['Food'] / days)}/day)" if "Food" not in picked else ""))
 
 
-def fit_label(price: float) -> str:
-    return "✅ fits" if price <= remaining else f"⚠️ {money(price - remaining)} over"
+def fit_label(price: float, in_trip: bool = False) -> str:
+    # An option already in the trip is already counted in "remaining", so add its own cost back.
+    left = remaining + price if in_trip else remaining
+    return "✅ fits" if price <= left else f"⚠️ {money(price - left)} over"
 
 
 def save_label(saved: float) -> str:
@@ -223,7 +229,40 @@ def add(category: str, description: str, amount: float, saved: float = 0.0, butt
     pick = run_bank(bank.record_pick, trip, category, description, amount, saved)
     if pick:
         links[pick["id"]] = [(label, url) for label, url in buttons if url]
+        ss.pick_notice = f"✅ Added {esc(pick['description'])} to your trip"
         st.rerun()
+
+
+def remove(pick_id: str, description: str):
+    # remove_pick returns None, so check for errors here rather than through run_bank.
+    try:
+        bank.remove_pick(trip, pick_id)
+    except (ValueError, bank.BankError) as error:
+        st.error(str(error))
+        return
+    except Exception:
+        st.error("The banking service didn't respond. Try again in a moment.")
+        return
+    ss.pick_notice = f"Removed {esc(description)} from your trip"
+    st.rerun()
+
+
+def pick_for(category: str, description: str) -> str | None:
+    """The pick id if this option is already in the trip (descriptions are stored like the bank does)."""
+    return pick_ids.get((category, (description or category).strip()[:80] or category))
+
+
+def add_or_remove(c, key: str, pick_id: str | None, description: str, on_add):
+    """The row's button: Add, or Remove once the option is in the trip (frozen while locked)."""
+    if pick_id:
+        if c.button("Remove", key=key, icon=":material/close:", disabled=bool(locked), use_container_width=True):
+            remove(pick_id, description)
+    elif c.button("Add", key=key, disabled=bool(locked), use_container_width=True):
+        on_add()
+
+
+def added_line(pick_id: str | None) -> str:
+    return "  \n✅ **Added to your trip**" if pick_id else ""
 
 
 def clock(departs: str) -> str:
@@ -312,18 +351,21 @@ if flights:
         for i, f in enumerate(shown):
             saved = planner.savings_vs_typical(f["price"], typical)
             stops = f.get("stops", 0)
-            with st.container(key=f"opt-flight-{i}"):
-                a, b, c = st.columns([4, 3, 1], vertical_alignment="center")
+            description = f"{f['airline']} flight {origin}→{dest}" + (f" ({flight_id(f)})" if flight_id(f) else "")
+            pick_id = pick_for("Flight", description)
+            with st.container(key=f"opt-flight-{i}" + ("-picked" if pick_id else "")):
+                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
                 a.markdown(f"**{esc(f['airline'])}** · " + (f"{esc(flight_id(f))} · " if flight_id(f) else "")
                            + f"{f['duration_min'] // 60}h {f['duration_min'] % 60}m · "
                            f"{'Nonstop' if not stops else f'{stops} stop' + ('s' if stops > 1 else '')}"
-                           + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else ""))
-                b.markdown(f"{money(f['price'])} · {fit_label(f['price'])}{save_label(saved)}  \n"
+                           + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else "") + added_line(pick_id))
+                b.markdown(f"{money(f['price'])} · {fit_label(f['price'], bool(pick_id))}{save_label(saved)}  \n"
                            + view_links([("View on Google Flights ↗", flight_buttons(f)[0][1])]))
-                if c.button("Add", key=f"flight-{i}", disabled=bool(locked), use_container_width=True):
+
+                def add_flight(i=i, f=f, description=description, saved=saved):
                     ss.map_flight = i  # the map follows the flight you add
-                    add("Flight", f"{f['airline']} flight {origin}→{dest}"
-                        + (f" ({flight_id(f)})" if flight_id(f) else ""), f["price"], saved, flight_buttons(f))
+                    add("Flight", description, f["price"], saved, flight_buttons(f))
+                add_or_remove(c, f"flight-{i}", pick_id, description, add_flight)
 
 if hotels:
     with st.container(key="card-hotels"):
@@ -336,16 +378,17 @@ if hotels:
         explain(chosen, [h["name"] for h in shown], prices, "hotel", allowance["Hotel"])
         for i, h in enumerate(shown):
             saved = planner.savings_vs_typical(h["total"], typical)
-            with st.container(key=f"opt-hotel-{i}"):
-                a, b, c = st.columns([4, 3, 1], vertical_alignment="center")
+            pick_id = pick_for("Hotel", h["name"])
+            with st.container(key=f"opt-hotel-{i}" + ("-picked" if pick_id else "")):
+                a, b, c = st.columns([4, 3, 1.4], vertical_alignment="center")
                 a.markdown(f"**{esc(h['name'])}** · {h['rating']}★ · {money(h['per_night'])}/night"
-                           + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else ""))
+                           + (f"  \n{badges(i, chosen)}" if badges(i, chosen) else "") + added_line(pick_id))
                 views = [("View hotel ↗" if h.get("property_token") else "Find hotel ↗", hotel_buttons(h)[0][1]),
                          ("Website ↗", h.get("website", ""))]
-                b.markdown(f"{money(h['total'])} total · {fit_label(h['total'])}{save_label(saved)}  \n"
+                b.markdown(f"{money(h['total'])} total · {fit_label(h['total'], bool(pick_id))}{save_label(saved)}  \n"
                            + view_links(views))
-                if c.button("Add", key=f"hotel-{i}", disabled=bool(locked), use_container_width=True):
-                    add("Hotel", h["name"], h["total"], saved, hotel_buttons(h))
+                add_or_remove(c, f"hotel-{i}", pick_id, h["name"],
+                              lambda h=h, saved=saved: add("Hotel", h["name"], h["total"], saved, hotel_buttons(h)))
 
 with st.container(key="card-food"):
     st.subheader("Food & activities")

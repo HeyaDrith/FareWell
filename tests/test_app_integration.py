@@ -287,8 +287,48 @@ class AppTripTests(DemoAppCase):
         self.assertIn("sample listings", self.plain_text())
         self.click("Unlock to make changes")
         self.assertFalse(any(b.disabled for b in self.add_buttons()))
+        self.add("flight-0")  # the added flight's button is Remove, so this takes it out again
+        self.assertEqual(self.metrics()["Spent"], "$623")
+
+    def test_added_options_are_marked_and_can_be_removed(self):
+        self.add("flight-0")  # Southwest
+        self.add("hotel-0")   # Seaside Budget Inn
+        self.assertEqual(self.app.button(key="flight-0").label, "Remove")
+        self.assertEqual(self.app.button(key="hotel-0").label, "Remove")
+        self.assertEqual(self.app.button(key="flight-1").label, "Add")  # other options stay addable
+        text = self.plain_text()
+        self.assertIn("**Southwest** · 3h 15m · Nonstop  \n💰 Cheapest  \n✅ **Added to your trip**", text)
+        self.assertIn("✅ Added Seaside Budget Inn to your trip", [t.value for t in self.app.toast])
+        self.assertEqual(text.count("✅ **Added to your trip**"), 2)
+        # An added option is judged against the budget before its own cost, so it still "fits".
+        self.assertIn("$623 total · ✅ fits", text)
+        self.app.button(key="flight-0").click().run()  # unselect the flight
+        self.assertEqual(self.metrics()["Spent"], "$623")
+        self.assertEqual(self.app.button(key="flight-0").label, "Add")
+        self.assertIn("Removed Southwest flight AUS→CUN from your trip", [t.value for t in self.app.toast])
+        self.assertNotIn("Southwest flight", "\n".join(m.value for m in self.app.markdown
+                                                     if m.value.startswith("Flight:")))  # gone from the trip list
+
+    def test_added_rows_get_the_green_style_hook(self):
+        self.add("hotel-1")
+        keys = []  # container keys become the CSS classes the green style targets
+
+        def walk(node):
+            block_id = str(getattr(getattr(node, "proto", None), "id", ""))
+            if "-opt-" in block_id:
+                keys.append("opt-" + block_id.split("-opt-", 1)[1])
+            for child in getattr(node, "children", {}).values():
+                walk(child)
+        walk(self.app._tree)
+        self.assertIn("opt-hotel-1-picked", keys)
+        self.assertIn("opt-hotel-0", keys)
+        self.assertNotIn("opt-hotel-0-picked", keys)
+
+    def test_remove_is_frozen_while_locked(self):
         self.add("flight-0")
-        self.assertEqual(self.metrics()["Spent"], "$1,447")
+        self.click("🔒 Lock in my trip")
+        self.assertEqual(self.app.button(key="flight-0").label, "Remove")
+        self.assertTrue(self.app.button(key="flight-0").disabled)
 
     def test_cannot_lock_while_over_budget(self):
         self.add("flight-2")

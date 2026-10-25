@@ -98,6 +98,14 @@ img[data-testid="stHeaderLogo"] { height: 2.6rem !important; max-height: none !i
 [class*="st-key-opt-"] { background: var(--ts-card); border: 1px solid var(--ts-line); border-radius: 16px;
   padding: 10px 14px; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 [class*="st-key-opt-"]:hover { border-color: #9CC9EA; box-shadow: 0 8px 22px rgba(14, 124, 196, 0.12); transform: translateY(-1px); }
+/* An option that's in the trip: green border, soft green fill and a check bar on the left */
+[class*="st-key-opt-"][class*="-picked"], [class*="st-key-opt-"][class*="-picked"]:hover {
+  border: 2px solid #22A06B; background: #EFFAF4; box-shadow: inset 6px 0 0 #22A06B, 0 8px 22px rgba(34, 160, 107, 0.16); }
+[class*="st-key-opt-"][class*="-picked"] strong { color: #0F7A4F; }
+[class*="st-key-opt-"][class*="-picked"] [data-testid="stBaseButton-secondary"] {
+  border-color: #F2B8B5 !important; color: #C0392B !important; background: #FFFFFF; }
+[class*="st-key-opt-"][class*="-picked"] [data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+  border-color: #C0392B !important; background: #FDECEA; }
 
 /* Beach heroes */
 .st-key-hero-home, .st-key-hero-plan { position: relative; border-radius: 28px; overflow: hidden;
