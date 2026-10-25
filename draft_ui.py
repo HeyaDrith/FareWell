@@ -56,15 +56,53 @@ def _load_example():
     _remember(draft, text, None, example=True)
 
 
+def _voice_input(version: int, demo: bool, has_key: bool):
+    """🎤 Record, and Gemini writes what you said into the trip box (added to anything typed).
+
+    Runs before the text box is drawn, because a widget's text can only be set before it exists
+    in a run. Each recording is written down once; a new recording adds a new paragraph.
+    """
+    off = demo or not has_key
+    why = ("Turn off Demo AI drafts in Data sources to use voice." if demo else
+           "Voice needs Gemini: add `GEMINI_API_KEY` to `.env` (or Streamlit secrets) and restart the app."
+           if off else "")
+    recording = st.audio_input("🎤 Talk instead of typing", key=f"ai_voice_{version}", disabled=off,
+                               help="Record your trip ideas; Gemini writes them into the box below, where you "
+                                    "can edit them. " + why)
+    if off:
+        st.caption(f"🎤 Voice is off. {why}")  # said plainly, not only in the hover help
+    if recording is None:
+        return
+    audio = recording.getvalue()
+    heard = sha256(audio).hexdigest()
+    if st.session_state.get("ai_voice_heard") == heard:
+        return
+    st.session_state.ai_voice_heard = heard
+    try:
+        with st.spinner("Writing down what you said..."):
+            words = trip_draft.transcribe(audio, demo=demo)
+    except trip_draft.DraftError as error:
+        st.error(str(error))
+        return
+    box = f"ai_chat_{version}"
+    before = (st.session_state.get(box) or "").rstrip()
+    st.session_state[box] = (f"{before}\n\n{words}" if before else words)[:trip_draft.MAX_TEXT]
+    st.success("Added what you said to the box below. Check it, then click Create trip draft.")
+
+
 def render_draft_panel(demo: bool):
     with st.expander("Plan from your group chat", icon="💬", key=PANEL_KEY, on_change="rerun"):
-        st.write("Paste the plans everyone has been discussing, or add a screenshot. Review the draft before using it.")
-        st.caption("When you click Create trip draft, the submitted text and screenshot pixels go to Google Gemini. "
-                   "Remove names and private details first. The app does not save uploads to disk.")
+        st.write("Paste the plans everyone has been discussing, say them out loud, or add a screenshot. "
+                 "Review the draft before using it.")
+        st.caption("When you click Create trip draft, the submitted text and screenshot pixels go to Google Gemini; "
+                   "voice recordings go to Gemini to be written down. Remove names and private details first. "
+                   "The app does not save uploads or recordings to disk.")
         example_col, clear_col = st.columns(2)
         example_col.button("Load example draft (no API)", on_click=_load_example)
         clear_col.button("Clear chat and draft", on_click=_clear_input)
         version = st.session_state.get("ai_input_version", 0)
+        has_key = bool(os.getenv("GEMINI_API_KEY", "").strip())
+        _voice_input(version, demo, has_key)
         text = st.text_area("Group chat or trip ideas", key=f"ai_chat_{version}",
                             max_chars=trip_draft.MAX_TEXT, height=150,
                             placeholder="Where from, where to, dates, budget, and what everyone wants to do...")
@@ -76,7 +114,6 @@ def render_draft_panel(demo: bool):
                 st.warning("Choose a screenshot up to 4 MB.")
                 return
             image = upload.getvalue()
-        has_key = bool(os.getenv("GEMINI_API_KEY", "").strip())
         if demo:
             st.caption("Demo mode makes no Gemini calls. Use the example, or turn off Demo mode for Gemini.")
         elif not has_key:
