@@ -57,9 +57,12 @@ PLACEHOLDERS = {"hotel": _tile("#7FD3E6", "#0E7CC4", "🏨"), "flight": _tile("#
 
 
 def picture_url(url: str, kind: str) -> str:
-    """The provider's picture (downloaded by the server, as a data: URI), or the drawn stand-in
-    for this kind of option when there's none or it can't be loaded."""
-    return travel.picture_data(str(url or "").strip()) or PLACEHOLDERS[kind]
+    """The provider's picture (downloaded by the server, as a data: URI), a logo bundled with the
+    app, or the drawn stand-in for this kind of option when there's none or it can't be loaded."""
+    url = str(url or "").strip()
+    if url.startswith("data:image/png;base64,"):  # travel.bundled_logo; provider links are https-only
+        return url
+    return travel.picture_data(url) or PLACEHOLDERS[kind]
 
 
 def picture(url: str, kind: str) -> str:

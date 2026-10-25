@@ -17,7 +17,7 @@ import ui
 
 ss = st.session_state
 # The data-source switches live in app.py's settings menu (same keys on every page).
-demo_search = ss.get("demo_search", not os.getenv("SERPAPI_KEY"))
+demo_search = ss.get("demo_search", True)  # sample prices unless the visitor turns live search on
 demo_ai = ss.get("demo_ai", not os.getenv("GEMINI_API_KEY"))
 bank_demo = ss.get("demo_bank", not os.getenv("NESSIE_API_KEY")) or not os.getenv("NESSIE_API_KEY")
 

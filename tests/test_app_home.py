@@ -85,6 +85,19 @@ class FreshHomePageTests(unittest.TestCase):
         self.assertEqual([t.label for t in app.toggle][:2],
                          ["Sample travel prices (no SerpApi calls)", "Demo bank (no Nessie calls)"])
 
+    def test_sample_prices_start_on_even_with_a_serpapi_key(self):
+        # Every live search spends credits, so a visitor must turn live search on themselves.
+        with patch.dict(os.environ, {"SERPAPI_KEY": "test-only-not-a-key", "NESSIE_API_KEY": "",
+                                     "GEMINI_API_KEY": "", "PYTHON_DOTENV_DISABLED": "1"}), \
+             patch("travel._client") as live:
+            app = AppTest.from_file(str(APP), default_timeout=15).run()
+            self.assertTrue(app.toggle(key="demo_search").value)
+            app.switch_page("views/plan.py").run()
+            next(b for b in app.button if b.label == "Start planning").click().run()
+            self.assertEqual(len(app.exception), 0)
+            live.assert_not_called()  # no SerpApi request
+            self.assertIn("Sample prices for the demo", "\n".join(c.value for c in app.caption))
+
     def test_the_app_is_called_farewell(self):
         with patch.dict(os.environ, {"SERPAPI_KEY": "", "NESSIE_API_KEY": "", "GEMINI_API_KEY": "",
                                      "PYTHON_DOTENV_DISABLED": "1"}):

@@ -174,6 +174,10 @@ python -m unittest discover -s tests -p test_planner.py -v
 
 ## Notes
 - Nessie is a sandbox: money is fake and nothing is booked. Picks are a spending plan.
+- **Sample travel prices** start on for every visitor, even when `SERPAPI_KEY` is set, because each
+  live search uses paid SerpApi credits. Turn the switch off in **Data sources** for live flights and
+  hotels (with the hotels' real photos). Sample flights show their real airline logos; the sample
+  hotels are made up, so they show a drawn tile.
 - Sample prices stay visibly labeled after every rerun. The budget caption separately
   identifies demo money versus the Nessie sandbox. The sidebar has separate switches for
   sample prices and the demo bank, so either key works on its own.
@@ -242,6 +246,8 @@ and savings, rather than retaining the original totals.
    demo modes. To enable live integrations, add the corresponding values using
    `.streamlit/secrets.toml.example` as the TOML template in Cloud's Secrets editor.
    Do not upload `.env`, commit secrets, or paste API keys into GitHub issues.
+   With `SERPAPI_KEY` set, visitors still start on sample prices; live search (and its
+   credits) only runs when someone turns **Sample travel prices** off.
 6. Choose an available app subdomain (try `farewell-hacktx`) and click **Deploy**.
 7. Check Home, Trip Planner, and Financial Planner on the public URL. Run a demo
    search, add a flight/hotel, and create a Trip Fund with a simulated contribution.

@@ -147,6 +147,14 @@ class MapDataTests(unittest.TestCase):
         self.assertEqual(travel.hotel_query("CDG"), "hotels in Paris")  # not "Paris (Roissy-en-France, ...)"
         self.assertEqual(travel.hotel_query("CDG", "Paris"), "hotels in Paris")
 
+    def test_sample_flights_show_their_real_airline_logos_offline(self):
+        flights = travel.search_flights("AUS", "CUN", "2027-01-22", "2027-01-29", True)
+        self.assertEqual([f["airline_code"] for f in flights], ["WN", "Y4", "AA"])
+        for f in flights:
+            self.assertTrue(f["logo"].startswith("data:image/png;base64,iVBORw0KGgo"), f["airline"])  # a PNG
+        for unknown in ("ZZ", "", "../x", "W/N"):
+            self.assertEqual(travel.bundled_logo(unknown), "")
+
     def test_airport_lookup(self):
         aus = travel.airport_location("aus")
         self.assertEqual((aus["code"], aus["city"]), ("AUS", "Austin"))

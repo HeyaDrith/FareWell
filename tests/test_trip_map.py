@@ -139,6 +139,11 @@ class PictureTests(unittest.TestCase):
         for bad in ("", None, "http://img.example/a.jpg", "javascript:alert(1)"):
             self.assertEqual(ui.picture_url(bad, "hotel"), ui.PLACEHOLDERS["hotel"])  # never fetched
         self.assertNotIn("ts-pic-logo", ui.picture("", "flight"))  # the stand-in fills its tile
+        bundled = travel.bundled_logo("WN")
+        with patch("travel.picture_data") as fetch:
+            self.assertEqual(ui.picture_url(bundled, "flight"), bundled)  # shipped with the app: no download
+            self.assertIn("ts-pic-logo", ui.picture(bundled, "flight"))
+            fetch.assert_not_called()
         with patch("travel.picture_data", return_value="data:image/png;base64,'><script>"):
             self.assertIn("&#x27;&gt;&lt;script&gt;", ui.picture("https://img.example/a.png", "hotel"))  # escaped
 

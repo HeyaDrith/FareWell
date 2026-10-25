@@ -37,9 +37,12 @@ page = st.navigation([home, plan, fund], position="top")
 # its own and the choice carries between pages. (Order matters to the tests: search, bank, AI.)
 _, settings = st.columns([4, 1])
 with settings.popover("Data sources", icon=":material/tune:", use_container_width=True):
-    st.toggle("Sample travel prices (no SerpApi calls)", value=not os.getenv("SERPAPI_KEY"), key="demo_search")
+    # Sample prices start on even when a SerpApi key is set: every live search uses paid credits,
+    # so on the public site a visitor has to turn live search on themselves.
+    st.toggle("Sample travel prices (no SerpApi calls)", value=True, key="demo_search")
     st.toggle("Demo bank (no Nessie calls)", value=not os.getenv("NESSIE_API_KEY"), key="demo_bank")
     st.toggle("Demo AI drafts (no Gemini calls)", value=not os.getenv("GEMINI_API_KEY"), key="demo_ai")
-    st.caption("Turn a switch off to use the live API once its key is set in `.env`.")
+    st.caption("Turn a switch off to use the live API once its key is set in `.env` (or the app's "
+               "Streamlit secrets). Live travel search shows real hotel photos and uses SerpApi credits.")
 
 page.run()

@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 DEMO_DIR = Path(__file__).parent / "demo_data"
+LOGO_DIR = Path(__file__).parent / "assets" / "airlines"  # <IATA code>.png, from Google Flights' logo set
 
 
 def _load_demo(name: str):
@@ -201,6 +202,17 @@ def picture_data(url: str) -> str:
     return f"data:{kind};base64,{base64.b64encode(body).decode()}" if body else ""
 
 
+@lru_cache(maxsize=32)
+def bundled_logo(code: str) -> str:
+    """An airline logo shipped with the app, as a data: URI ("" if there's none for that code).
+    Used for sample flights, so the demo shows real logos without any network access."""
+    code = str(code or "").strip().upper()
+    path = LOGO_DIR / f"{code}.png"
+    if len(code) != 2 or not code.isalnum() or not path.is_file():
+        return ""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
 def prefetch_pictures(urls: list[str]):
     """Download a page's pictures in parallel, so six slow hosts don't take six times as long."""
     from concurrent.futures import ThreadPoolExecutor
@@ -267,7 +279,8 @@ def search_flights(origin: str, dest: str, depart: str, ret: str, demo: bool = F
     """
     _stay_nights(depart, ret)
     if demo or not os.getenv("SERPAPI_KEY"):
-        return _load_demo("flights.json")
+        # Sample airlines are real, so their cards show the real logos shipped with the app.
+        return [{**f, "logo": bundled_logo(f.get("airline_code", ""))} for f in _load_demo("flights.json")]
 
     data = _client({
         "engine": "google_flights",
