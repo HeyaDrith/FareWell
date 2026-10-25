@@ -8,6 +8,8 @@ import warnings
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+import travel
+
 MAX_TEXT = 12000
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
@@ -76,7 +78,6 @@ def review_questions(draft: TripDraft, today: date | None = None) -> list[str]:
     for field, message in (
         (draft.origin, "Which departure airport should we use?"),
         (draft.destination, "Which arrival airport should we use?"),
-        (draft.city, "Which city should we search for hotels in?"),
         (draft.depart, "What is the departure date?"),
         (draft.return_date, "What is the return date?"),
         (draft.travelers, "How many people are traveling?"),
@@ -100,16 +101,20 @@ def review_questions(draft: TripDraft, today: date | None = None) -> list[str]:
 def confirmed_search_fields(draft: TripDraft, today: date | None = None) -> dict:
     """Validate reviewed fields before touching the existing trip form."""
     today = today or date.today()
-    if not all((draft.origin, draft.destination, draft.city, draft.depart, draft.return_date)):
-        raise DraftError("Fill in both airports, hotel city, and travel dates before applying.")
+    if not all((draft.origin, draft.destination, draft.depart, draft.return_date)):
+        raise DraftError("Fill in both airports and travel dates before applying.")
     if draft.origin == draft.destination:
         raise DraftError("Departure and arrival airports must be different.")
     if draft.depart < today or draft.return_date <= draft.depart:
         raise DraftError("Choose a departure today or later, and a return after departure.")
     if draft.budget is not None and (draft.currency != "USD" or draft.budget_scope == "unknown"):
         raise DraftError("Confirm that the budget is in USD and choose per person or group, or leave the budget blank.")
+    # Hotels are searched in the arrival airport's city; a different city from the chat (staying
+    # in Tulum, flying into Cancún) becomes the optional area that narrows that search.
+    city = draft.city or ""
+    area = "" if travel.same_place(city, travel.hotel_city(draft.destination)) else city
     return {"trip_origin": draft.origin, "trip_destination": draft.destination,
-            "trip_city": f"hotels in {draft.city}", "trip_depart": draft.depart,
+            "trip_area": area[:travel.MAX_AREA_CHARS], "trip_depart": draft.depart,
             "trip_return": draft.return_date}
 
 

@@ -137,6 +137,16 @@ class MapDataTests(unittest.TestCase):
                          {"Photo": "https://img.example/b.jpg", "Original only": "https://img.example/c.jpg",
                           "None": "", "Junk": ""})
 
+    def test_hotel_search_is_the_destination_city_plus_an_optional_area(self):
+        self.assertEqual(travel.hotel_query("CUN"), "hotels in Cancún")
+        self.assertEqual(travel.hotel_query("cun", "  near   the beach "), "hotels in Cancún near the beach")
+        for repeat in ("Cancun", "cancún", "hotels in Cancun", "Hotels", ""):  # adds nothing
+            with self.subTest(area=repeat):
+                self.assertEqual(travel.hotel_query("CUN", repeat), "hotels in Cancún")
+        self.assertEqual(len(travel.hotel_query("CUN", "x" * 500)), len("hotels in Cancún ") + travel.MAX_AREA_CHARS)
+        self.assertEqual(travel.hotel_query("CDG"), "hotels in Paris")  # not "Paris (Roissy-en-France, ...)"
+        self.assertEqual(travel.hotel_query("CDG", "Paris"), "hotels in Paris")
+
     def test_airport_lookup(self):
         aus = travel.airport_location("aus")
         self.assertEqual((aus["code"], aus["city"]), ("AUS", "Austin"))

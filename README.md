@@ -14,10 +14,12 @@ Nessie sandbox. Built at HackTX 26.
   holds the sample-prices / demo-bank / demo-AI switches.
 
 ## How it works
-1. Enter a **budget**, airports, dates and a hotel search, then click **Start planning**.
+1. Enter a **budget**, airports and dates, then click **Start planning**. Hotels are always
+   searched in the city of the **To** airport, so they can't end up somewhere the flight doesn't
+   go. The optional **Hotel area or type** box narrows that search ("Zona Hotelera", "resorts",
+   "near the beach"); leave it blank to search the whole city.
    The airport fields are searchable dropdowns (about 4,600 airports): type a city ("cancun",
-   accents optional) or a code ("DFW") and pick from the list. Choosing a destination fills in
-   the hotel search for that city. Only airports in the list can be chosen; typed text that
+   accents optional) or a code ("DFW") and pick from the list. Only airports in the list can be chosen; typed text that
    isn't one of them can't be entered (a chat draft with an unlisted airport is refused too).
 2. Flights and hotels show the **typical price** (median of the results), whether each option
    **fits** what's left of the budget, and how much it **saves** vs. typical.

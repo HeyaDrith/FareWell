@@ -143,9 +143,16 @@ class TripDraftTests(unittest.TestCase):
     def test_confirmed_fields_are_a_whitelist_for_the_search_form(self):
         _, sample = drafts.example_draft(TODAY)
         fields = drafts.confirmed_search_fields(sample, TODAY)
-        self.assertEqual(set(fields), {"trip_origin", "trip_destination", "trip_city", "trip_depart", "trip_return"})
-        self.assertEqual(fields["trip_city"], "hotels in Cancun")
+        self.assertEqual(set(fields), {"trip_origin", "trip_destination", "trip_area", "trip_depart", "trip_return"})
+        self.assertEqual(fields["trip_area"], "")  # "Cancun" is where the flight lands anyway
         self.assertNotIn("budget", fields)
+
+    def test_a_different_hotel_city_becomes_the_optional_area(self):
+        _, sample = drafts.example_draft(TODAY)
+        for city, area in (("Tulum", "Tulum"), ("cancún", ""), (None, "")):
+            with self.subTest(city=city):
+                fields = drafts.confirmed_search_fields(sample.model_copy(update={"city": city}), TODAY)
+                self.assertEqual(fields["trip_area"], area)
 
     def test_review_rejects_missing_fields_bad_dates_and_unresolved_budget(self):
         _, sample = drafts.example_draft(TODAY)

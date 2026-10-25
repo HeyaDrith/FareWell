@@ -37,7 +37,7 @@ class HomePageTests(DemoAppCase):
         html = self.html()
         self.assertIn("1 trip · $1,035.00", html)
         self.assertIn("AUS → CUN", html)
-        self.assertIn("Cancun", html)
+        self.assertIn("Cancún", html)  # the arrival airport's city
         self.assertIn("Confirmed", html)
 
     def test_locking_twice_keeps_one_history_entry(self):
@@ -60,13 +60,13 @@ class HomePageTests(DemoAppCase):
         self.go_home()
         self.assertIn("1 trip · $1,035.00", self.html())
 
-    def test_user_text_is_escaped_in_the_dashboard(self):
-        self.app.text_input(key="trip_city").input("hotels in <b>Tulum</b>").run()
+    def test_typed_hotel_area_never_reaches_the_dashboard_as_html(self):
+        self.app.text_input(key="trip_area").input("<b>Tulum</b>").run()
         self.click("Start planning")
         self.add("flight-0")
         self.click("🔒 Lock in my trip")
         self.go_home()
-        self.assertIn("&lt;b&gt;Tulum&lt;/b&gt;", self.html())
+        self.assertIn("Cancún", self.html())  # the trip is named for where the flight lands
         self.assertNotIn("<b>Tulum</b>", self.html())
 
 

@@ -51,6 +51,38 @@ def airport_city(code: str) -> str:
     return str(found[2]) if found and len(found) > 2 and found[2] else ""
 
 
+def _plain(text: str) -> str:
+    """Lowercase, accents dropped and spaces collapsed, for comparing place names."""
+    folded = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode()
+    return " ".join(folded.lower().split())
+
+
+def same_place(a: str, b: str) -> bool:
+    """ "Cancun" and "Cancún" (or "hotels in Cancun") name the same place."""
+    a, b = _plain(a).removeprefix("hotels in "), _plain(b).removeprefix("hotels in ")
+    return bool(a) and a == b
+
+
+MAX_AREA_CHARS = 80
+
+
+def hotel_city(dest: str) -> str:
+    """The city to search hotels in for an arrival airport: its city without the airport's
+    district in brackets (CDG "Paris (Roissy-en-France, Val-d'Oise)" -> "Paris")."""
+    return airport_city(dest).split(" (")[0].strip()
+
+
+def hotel_query(dest: str, area: str = "") -> str:
+    """The Google Hotels search: always the destination airport's city, so the hotels can't
+    end up somewhere other than where the flight lands, plus optional words to narrow it
+    ("Zona Hotelera", "resorts", "near the beach"). Typing the city again adds nothing."""
+    city = hotel_city(dest) or str(dest or "").strip().upper()
+    extra = " ".join(str(area or "").split())[:MAX_AREA_CHARS]
+    if same_place(extra, city) or _plain(extra) in ("hotels", "hotel"):
+        extra = ""
+    return f"hotels in {city}" + (f" {extra}" if extra else "")
+
+
 def airport_location(code: str) -> dict | None:
     """{"code", "lat", "lon", "city"} for an IATA airport code, or None if unknown."""
     code = str(code or "").strip().upper()
@@ -273,7 +305,7 @@ def _route(legs: list[dict]) -> list[str]:
 
 
 def search_hotels(query: str, check_in: str, check_out: str, demo: bool = False) -> list[dict]:
-    """query is free text, e.g. "hotels in Cancun".
+    """query is the search text, normally from hotel_query (e.g. "hotels in Cancún near the beach").
 
     Returns [{"name", "per_night", "total", "rating", "property_token", "website", "lat", "lon", "image"}],
     cheapest first. property_token is Google's ID for that exact hotel (its Google Hotels page

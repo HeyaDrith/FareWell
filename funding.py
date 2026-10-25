@@ -41,7 +41,19 @@ def plan(fund, saved, today=None):
     return rows
 
 
-def contribute(fund, today=None):
+def plan_after(fund, saved, amount, today=None):
+    """The rest of the plan if this week's contribution is `amount` instead of the planned one:
+    later weeks grow (or shrink) so the target is still reached by the deadline."""
+    today = today or date.today()
+    rows = plan(fund, saved, today)
+    if not rows:
+        return []
+    return plan({**fund, "next_due": rows[0]["Date"] + timedelta(days=7)}, saved + amount, today)
+
+
+def contribute(fund, today=None, amount=None):
+    """Move this week's contribution: the planned amount, or `amount` (whole dollars) when the
+    person chose to put in less or more this week."""
     today = today or date.today()
     if fund["pending"]:
         raise bank.BankError("A previous transfer needs reconciliation before another contribution.")
@@ -52,6 +64,12 @@ def contribute(fund, today=None):
     if not rows:
         raise ValueError("The target is funded or the funding deadline has passed.")
     row = rows[0]
+    if amount is not None:
+        if not math.isfinite(amount) or amount < 1 or amount != int(amount):
+            raise ValueError("Choose a whole-dollar amount of at least $1.")
+        if amount > fund["target"] - saved:
+            raise ValueError(f"That's more than the ${fund['target'] - saved:,.0f} still to save.")
+        row = {**row, "Contribution ($)": int(amount), "Projected fund ($)": saved + int(amount)}
     amount = row["Contribution ($)"]
     if amount > checking:
         raise ValueError("Not enough money in checking for this week's contribution.")
