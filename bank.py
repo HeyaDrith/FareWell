@@ -138,6 +138,18 @@ def _completed_total(account_id: str, kind: str) -> float:
     return sum(float(r["amount"]) for r in records if r.get("status") == "completed")
 
 
+def add_demo_money(account_id: str, amount: float) -> None:
+    """Simulate a paycheck into a demo checking account (demo money only, never Nessie)."""
+    value = _amount(amount)
+    if not str(account_id).startswith("demo-"):
+        raise ValueError("Only demo checking accounts can be topped up.")
+    with _DEMO_LOCK:
+        account, kind = _demo_account(account_id)
+        if kind != "checking":
+            raise ValueError("Add demo money to checking, not the Trip Fund.")
+        account[kind] = float(Decimal(str(account[kind])) + value)
+
+
 def transfer(from_id: str, to_id: str, amount: float, demo: bool = False) -> None:
     """Move a positive cent amount; reject insufficient funds before submitting.
 
