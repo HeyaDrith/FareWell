@@ -1,5 +1,7 @@
 # ✈️ FareWell
 
+**Live website:** [farewell-hacktx.streamlit.app](https://farewell-hacktx.streamlit.app/)
+
 Type a budget and destination, pick the flights, hotels and other expenses that fit, and
 see how much you save. Prices come from SerpApi; every pick is tracked in Capital One's
 Nessie sandbox. Built at HackTX 26.
@@ -281,5 +283,5 @@ session loss or server restarts can lose plans and demo balances. There is no sh
 persistent database yet. Configured live API keys are server-side, but visitors'
 requests use the associated API quotas. Keep a local demo available for judging.
 
-Local fallback: `streamlit run app.py`. A public URL exists only after Cloud finishes
-building; add that verified URL to Devpost and this README after deployment.
+Live deployment: [farewell-hacktx.streamlit.app](https://farewell-hacktx.streamlit.app/).
+Local fallback: `streamlit run app.py`.
